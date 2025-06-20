@@ -1,0 +1,62 @@
+{
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devPath": "../dist",
+    "distDir": "../dist",
+    "withGlobalTauri": true
+  },
+  "package": {
+    "productName": "Atode",
+    "version": "0.0.1"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      },
+      "globalShortcut": {
+        "all": true
+      },
+      "window": {
+        "all": false,
+        "close": true,
+        "hide": true,
+        "show": true,
+        "maximize": true,
+        "minimize": true,
+        "unmaximize": true,
+        "unminimize": true,
+        "setFocus": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "identifier": "com.atode.app",
+      "icon": [
+        "icons/icon.ico"
+      ]
+    },
+    "security": {
+      "csp": null
+    },
+    "systemTray": {
+      "iconPath": "icons/icon.ico"
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "resizable": true,
+        "title": "Atode",
+        "width": 1000,
+        "height": 700,
+        "visible": false,
+        "alwaysOnTop": false,
+        "closable": true,
+        "label": "main"
+      }
+    ]
+  }
+}

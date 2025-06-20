@@ -1,0 +1,5 @@
+src-tauri/target/
+src-tauri/Cargo.lock
+node_modules/
+dist/
+*.db

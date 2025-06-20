@@ -1,0 +1,16 @@
+{
+  "name": "atode-gui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "後で読む記事管理ツール",
+  "scripts": {
+    "prepare": "cmd /c \"if not exist dist mkdir dist\" && cmd /c \"copy main.js dist\\bundle.js >nul\" && cmd /c \"copy index.html dist\\index.html >nul\"",
+    "dev": "npm run prepare && tauri dev",
+    "build": "npm run prepare && tauri build",
+    "info": "tauri info",
+    "clean": "cmd /c \"if exist dist rmdir /s /q dist\""
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.6.3"
+  }
+}
