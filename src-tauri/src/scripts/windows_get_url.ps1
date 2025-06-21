@@ -45,14 +45,46 @@ function Get-URLFromAddressBar {
         } catch {
             # Ignore
         }
+        $url = $null
+                
+        # Method 1: Ctrl+L -> C (fast)
+        [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, 0, 0)
+        [Win32API]::keybd_event([Win32API]::VK_L, 0, 0, 0)
+        Start-Sleep -Milliseconds 30
+        [Win32API]::keybd_event([Win32API]::VK_C, 0, 0, 0)
+        [Win32API]::keybd_event([Win32API]::VK_L, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
+        [Win32API]::keybd_event([Win32API]::VK_C, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
+        [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
+        Start-Sleep -Milliseconds 50
         
-        # Method 1: F6 twice (fast)
+        try {
+            $url = [System.Windows.Forms.Clipboard]::GetText().Trim()
+            if ($url -and (($url -match '^https?://') -or ($url -match '^file://'))) {
+                Write-Host "Fast method success: $url" -ForegroundColor Green
+                # Escape key
+                [Win32API]::keybd_event([Win32API]::VK_ESCAPE, 0, 0, 0)
+                Start-Sleep -Milliseconds 50
+                [Win32API]::keybd_event([Win32API]::VK_ESCAPE, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
+                # Restore clipboard
+                try {
+                    if ($originalClipboard) {
+                        [System.Windows.Forms.Clipboard]::SetText($originalClipboard)
+                    }
+                } catch { }
+                return $url
+            }
+        } catch {
+            Write-Host "Fast method failed" -ForegroundColor Yellow
+        }
+
+        
+        # Method 2: F6 twice
+        [Win32API]::keybd_event(0x75, 0, 0, 0)
+        [Win32API]::keybd_event(0x75, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
+        Start-Sleep -Milliseconds 20
         [Win32API]::keybd_event(0x75, 0, 0, 0)
         [Win32API]::keybd_event(0x75, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
         Start-Sleep -Milliseconds 50
-        [Win32API]::keybd_event(0x75, 0, 0, 0)
-        [Win32API]::keybd_event(0x75, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
-        Start-Sleep -Milliseconds 100
         
         # Select all and copy
         [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, 0, 0)
@@ -68,49 +100,8 @@ function Get-URLFromAddressBar {
         Start-Sleep -Milliseconds 50
         [Win32API]::keybd_event([Win32API]::VK_C, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
         [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
-        Start-Sleep -Milliseconds 100
-        
-        $url = $null
-        try {
-            $url = [System.Windows.Forms.Clipboard]::GetText().Trim()
-            if ($url -and (($url -match '^https?://') -or ($url -match '^file://'))) {
-                Write-Host "Fast method success: $url" -ForegroundColor Green
-                # Restore clipboard
-                try {
-                    if ($originalClipboard) {
-                        [System.Windows.Forms.Clipboard]::SetText($originalClipboard)
-                    }
-                } catch { }
-                return $url
-            }
-        } catch {
-            Write-Host "Fast method failed" -ForegroundColor Yellow
-        }
-        
-        # Method 2: Ctrl+L (reliable)
-        [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, 0, 0)
-        [Win32API]::keybd_event([Win32API]::VK_L, 0, 0, 0)
         Start-Sleep -Milliseconds 50
-        [Win32API]::keybd_event([Win32API]::VK_L, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
-        [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
-        Start-Sleep -Milliseconds 200
-        
-        # Select all
-        [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, 0, 0)
-        [Win32API]::keybd_event(0x41, 0, 0, 0)
-        Start-Sleep -Milliseconds 50
-        [Win32API]::keybd_event(0x41, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
-        [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
-        Start-Sleep -Milliseconds 50
-        
-        # Copy
-        [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, 0, 0)
-        [Win32API]::keybd_event([Win32API]::VK_C, 0, 0, 0)
-        Start-Sleep -Milliseconds 50
-        [Win32API]::keybd_event([Win32API]::VK_C, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
-        [Win32API]::keybd_event([Win32API]::VK_CONTROL, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
-        Start-Sleep -Milliseconds 150
-        
+
         try {
             $url = [System.Windows.Forms.Clipboard]::GetText().Trim()
             if ($url -and (($url -match '^https?://') -or ($url -match '^file://'))) {
@@ -126,7 +117,7 @@ function Get-URLFromAddressBar {
         
         # Escape key
         [Win32API]::keybd_event([Win32API]::VK_ESCAPE, 0, 0, 0)
-        Start-Sleep -Milliseconds 30
+        Start-Sleep -Milliseconds 50
         [Win32API]::keybd_event([Win32API]::VK_ESCAPE, 0, [Win32API]::KEYEVENTF_KEYUP, 0)
         
         # Restore clipboard
