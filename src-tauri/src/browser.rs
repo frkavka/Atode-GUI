@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use tauri::api::path::resource_dir;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BrowserInfo {
@@ -92,17 +93,29 @@ fn get_linux_browser_info() -> Result<BrowserInfo, String> {
 
 /// スクリプトファイルのパスを取得
 fn get_script_path(filename: &str) -> Result<String, String> {
-    // 実行ファイルの場所からの相対パス、または開発時のsrc/scriptsからの相対パス
-    let paths = [
-        format!("src/scripts/{}", filename),           // 開発時
-        format!("scripts/{}", filename),               // リリース時（同梱）
-        format!("../scripts/{}", filename),           // 実行ファイルの親ディレクトリ
+
+    // Tauri contextを生成
+    let context = tauri::generate_context!();
+    let package_info = context.package_info();
+    let env = tauri::Env::default();
+
+   // リソースディレクトリを取得
+    let resource_dir_path = resource_dir(&package_info, &env)
+        .ok_or("リソースディレクトリが取得できません")?;
+
+    // 複数のパスパターンを試す  // ← 新しいロジック
+    let possible_paths = [
+        resource_dir_path.join("src").join("scripts").join(filename),
+        resource_dir_path.join("scripts").join(filename),
+        resource_dir_path.join(filename),
     ];
     
-    for path in &paths {
-        if std::path::Path::new(path).exists() {
-            println!("✅ スクリプトファイル発見: {}", path);
-            return Ok(path.to_string());
+    for path in &possible_paths {
+        if path.exists() {
+            // パスを文字列として返す
+            return path.to_str()
+                .ok_or("パスを文字列に変換できません".to_string())
+                .map(|s| s.to_string());
         }
     }
     

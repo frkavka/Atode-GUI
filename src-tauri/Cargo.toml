@@ -35,6 +35,11 @@ features = [
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "processthreadsapi"] }
 
+# 🔥 重要: custom-protocolフィーチャーの設定
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [[bin]]
 name = "src-tauri"
 path = "src/main.rs"

@@ -37,6 +37,9 @@
       "identifier": "com.atode.app",
       "icon": [
         "icons/icon.ico"
+      ],
+      "resources": [
+        "src/scripts/windows_get_url.ps1"
       ]
     },
     "security": {
