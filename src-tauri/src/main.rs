@@ -249,8 +249,8 @@ fn get_articles(
         if let Some(tag_query) = filters.tag_query {
             let search_tags: Vec<&str> = tag_query.split(',').map(|t| t.trim()).collect();
             for tag in search_tags {
-                conditions.push("(',' || COALESCE(tags, '') || ',') LIKE ?".to_string());
-                params.push(format!("%,{},%", tag));
+                conditions.push("COALESCE(tags, '') LIKE ?".to_string());
+                params.push(format!("%{}%", tag)); // 単純な部分一致
             }
         }
         

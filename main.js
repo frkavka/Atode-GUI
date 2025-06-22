@@ -90,6 +90,19 @@ class AtodeApp {
 
     async loadArticles() {
         try {
+            // 検索条件をクリア
+            const tagSearch = document.getElementById('tagSearch');
+            const siteSearch = document.getElementById('siteSearch');
+            
+            if (tagSearch) {
+                tagSearch.value = '';
+                tagSearch.placeholder = '🏷️ タグで検索 (カンマ区切り入力)'; // プレースホルダーリセット
+            }
+            if (siteSearch) {
+                siteSearch.value = '';
+                siteSearch.placeholder = '🌐 サイトで検索(例：google)';
+            }
+            
             this.articles = await invoke('get_articles');
             this.renderArticles();
             console.log(`📚 ${this.articles.length}件の記事を読み込みました`);
@@ -104,7 +117,12 @@ class AtodeApp {
         const site = document.getElementById('siteSearch')?.value.trim();
 
         const filters = {};
-        if (tagQuery) filters.tag_query = tagQuery;
+        if (tagQuery) {
+            // カンマ+スペースをカンマに統一して小文字化
+            const normalizedTags = normalizeTagString(tagQuery).toLowerCase();
+            filters.tag_query = normalizedTags;
+        }
+        
         if (site) filters.site = site;
 
         try {
@@ -302,16 +320,20 @@ class AtodeApp {
     addToSearchBox(tagName) {
         const tagSearch = document.getElementById('tagSearch');
         if (!tagSearch) return;
-
+        
+        // 余計なスペース等除去 + 大文字小文字の区別なし
+        const cleanTagName = normalizeTagString(tagName).toLowerCase();
         const currentValue = tagSearch.value.trim();
+        
         if (currentValue) {
+            const cleanCurrentValue = normalizeTagString(currentValue).toLowerCase();
             const tags = currentValue.split(',').map(t => t.trim());
-            if (!tags.includes(tagName)) {
-                tagSearch.value = tags.concat(tagName).join(', ');
+            if (!tags.includes(cleanTagName)) {
+                tagSearch.value = tags.concat(cleanTagName).join(','); // カンマ区切りで統一
             }
         } else {
-            tagSearch.value = tagName;
-        }
+            tagSearch.value = cleanTagName;
+    }
 
         this.searchArticles();
     }
@@ -419,6 +441,16 @@ class AtodeApp {
         div.textContent = text;
         return div.innerHTML;
     }
+}
+
+//タグ検索の正規化
+function normalizeTagString(tagString){
+    return tagString
+        .replace(/,\s+/g, ',')      // カンマ+スペース → カンマ
+        .replace(/\s+,/g, ',')      // スペース+カンマ → カンマ  
+        .replace(/\s+/g, ' ')       // 連続スペース → 単一スペース
+        .toLowerCase()
+        .trim();
 }
 
 // アプリ初期化
