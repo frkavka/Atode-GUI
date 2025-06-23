@@ -1,0 +1,54 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]  # v1.0.0 のようなタグでリリース
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest]  # Windowsでビルド
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Install dependencies
+      run: npm install
+      
+    - name: Build Tauri app
+      run: npm run build
+      
+    - name: Upload artifacts (開発用)
+      if: github.ref_type != 'tag'
+      uses: actions/upload-artifact@v4
+      with:
+        name: atode-windows
+        path: src-tauri/target/release/bundle/msi/*.msi
+        
+    # タグがpushされた時のみリリース作成
+    - name: Create Release
+      if: github.ref_type == 'tag'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          src-tauri/target/release/bundle/msi/*.msi
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
