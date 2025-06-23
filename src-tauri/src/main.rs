@@ -139,7 +139,10 @@ fn setup_application(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Err
                     window.hide().unwrap();
                 } else {
                     window.show().unwrap();
+                    window.unminimize().unwrap(); // 最小化解除
                     window.set_focus().unwrap();
+                    window.set_always_on_top(true).unwrap();
+                    window.set_always_on_top(false).unwrap(); // すぐ解除
                 }
             }
         })
