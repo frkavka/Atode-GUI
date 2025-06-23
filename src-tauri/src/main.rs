@@ -499,10 +499,26 @@ fn normalize_url(url: &str) -> String {
     
     match Url::parse(url) {
         Ok(parsed_url) => {
+            let host = parsed_url.host_str().unwrap_or("");
+            
+            // 一部のサイトではクエリパラメータを殺さない
+            if url_preserve_targets(host) {
+                return url.to_string();
+            }
             format!("{}{}", parsed_url.origin().ascii_serialization(), parsed_url.path())
         }
         Err(_) => url.to_string(),
     }
+}
+
+fn url_preserve_targets(host: &str) -> bool {
+    //TODO 将来的には設定ファイルから読み込みたい
+    let url_preserve_sites = [
+        "youtube.com",
+        // あと何かあれば随時
+    ];
+    
+    url_preserve_sites.iter().any(|&site| host.contains(site))
 }
 
 fn init_database() -> Result<Connection> {

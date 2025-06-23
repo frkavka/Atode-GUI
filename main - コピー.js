@@ -271,11 +271,12 @@ class AtodeApp {
 
         try {
             if (this.editingUrl) {
-                await invoke('update_article', {request });
+                // 🔥 修正箇所: requestオブジェクトをrequestキーでラップ
+                await invoke('update_article', { request });
                 this.showSuccess('記事を更新しました');
             } else {
                 // save_articleも同様に修正
-                const result = await invoke('save_article', {request });
+                const result = await invoke('save_article', { request });
                 this.showSuccess(result === 'created' ? '記事を追加しました' : '記事を更新しました');
             }
             
