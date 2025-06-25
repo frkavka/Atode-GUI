@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "後で読む記事管理ツール",
   "scripts": {
-    "prepare": "cmd /c \"if not exist dist mkdir dist\" && cmd /c \"copy main.js dist\\bundle.js >nul\" && cmd /c \"copy index.html dist\\index.html >nul\" && cmd /c \"copy styles.css dist\\styles.css >nul\"",
+    "prepare": "cmd /c \"if not exist dist mkdir dist\" && cmd /c \"copy src-web\\main.js dist\\bundle.js >nul\" && cmd /c \"copy src-web\\index.html dist\\index.html >nul\" && cmd /c \"copy src-web\\styles.css dist\\styles.css >nul\"",
     "dev": "npm run prepare && tauri dev",
     "build": "npm run prepare && tauri build",
     "info": "tauri info",
