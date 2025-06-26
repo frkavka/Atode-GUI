@@ -154,7 +154,8 @@ class AtodeApp {
     }
 
     renderArticle(article) {
-        const tags = article.tags ? article.tags.split(',').map(tag => tag.trim()) : [];
+        //const tags = article.tags ? article.tags.split(',').map(tag => tag.trim()) : [];
+        const tags = article.tags || []; // 既に配列なのでそのまま使用
         const tagsHtml = tags.map(tag => 
             `<span class="tag clickable-tag" onclick="app.handleTagClick('${this.escapeHtml(tag)}', 'search')" title="このタグで検索">
                 ${this.escapeHtml(tag)}
@@ -175,8 +176,8 @@ class AtodeApp {
                     ${this.escapeHtml(article.title)}
                 </div>
                 <div class="article-meta">
-                    <span class="site-link" onclick="app.addToSiteSearch('${this.escapeHtml(article.site)}')" title="このサイトで検索">
-                        ${this.escapeHtml(article.site)}
+                    <span class="site-link" onclick="app.addToSiteSearch('${this.escapeHtml(article.site_name)}')" title="このサイトで検索">
+                        ${this.escapeHtml(article.site_name)}
                     </span> • ${updatedDate}
                 </div>
                 <div class="article-tags">${tagsHtml}</div>

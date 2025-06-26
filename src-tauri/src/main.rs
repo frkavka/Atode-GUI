@@ -28,32 +28,52 @@ static REFRESH_NEEDED: AtomicBool = AtomicBool::new(false);
 // main
 #[derive(Debug, Serialize, Deserialize)]
 struct Article {
+    id: i64,
     url: String,
     title: String,
-    site: String,
-    tags: Option<String>,
+    site_id: Option<i64>,
+    created_at: String,
     updated_at: String,
 }
 
-// 新規登録と更新は同じ構造だが、分けたくなったときのために別にしておく
+#[derive(Debug, Serialize, Deserialize)]
+struct Site {
+    id: i64,
+    name: String,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Tag {
+    id: i64,
+    name: String,
+    parent_id: Option<i64>,
+    created_at: String,
+}
+
+// フロントエンド用（結果）
+#[derive(Debug, Serialize, Deserialize)]
+struct ArticleWithDetails {
+    id: i64,
+    url: String,
+    title: String,
+    site_name: Option<String>,
+    tags: Vec<String>,
+    created_at: String,
+    updated_at: String,
+}
+// 後で消すと思う
+#[derive(Debug, Serialize, Deserialize)]
+struct SearchFilters {
+    tag_query: Option<String>,
+    site: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct SaveArticleRequest {
     url: String,
     title: String,
     tags: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct UpdateArticleRequest {
-    url: String,
-    title: String,
-    tags: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct SearchFilters {
-    tag_query: Option<String>,
-    site: Option<String>,
 }
 
 // "よく使う"タグ管理用
@@ -89,7 +109,7 @@ fn main() {
             // 記事管理
             get_articles,
             save_article,
-            update_article,
+            //update_article, //一旦コメントアウト
             delete_article,
             
             // システム操作
@@ -221,8 +241,6 @@ fn handle_system_tray_event(app: &AppHandle, event: SystemTrayEvent) {
 // Tauri用コマンド設定 - Commands for Tauri
 //================================================================================================
 
-// TODO SQLを組み立てているところはDiesel等を使うようにする
-
 // リフレッシュが必要かチェックするコマンド
 #[tauri::command]
 fn check_refresh_needed() -> Result<bool, String> {
@@ -238,27 +256,34 @@ fn check_refresh_needed() -> Result<bool, String> {
 #[tauri::command]
 fn get_articles(
            state: State<AppState>, filters: Option<SearchFilters>
-        ) -> Result<Vec<Article>, String>
+        ) -> Result<Vec<ArticleWithDetails>, String>
 {
     // 記事検索
     let db = state.db.lock().map_err(|e| e.to_string())?;
     
-    let mut query = "SELECT url, title, site, tags, updated_at FROM articles".to_string();
+    let mut query = 
+    "SELECT 
+        a.id,
+        a.url,
+        a.title,
+        COALESCE(s.name, '') as site_name,
+        GROUP_CONCAT(t.name) as tags,
+        a.created_at,
+        a.updated_at
+     FROM articles a
+     LEFT JOIN sites s ON a.site_id = s.id
+     LEFT JOIN article_tags at ON a.id = at.article_id
+     LEFT JOIN tags t ON at.tag_id = t.id
+     GROUP BY a.id, a.url, a.title, s.name, a.created_at, a.updated_at
+    ".to_string();
+
     let mut conditions = Vec::new();
     let mut params: Vec<String> = Vec::new();
     
-    // TODO タグテーブルを作ったら修正を入れる
+    // TODO: フィルター処理（タグは後回し）
     if let Some(filters) = filters {
-        if let Some(tag_query) = filters.tag_query {
-            let search_tags: Vec<&str> = tag_query.split(',').map(|t| t.trim()).collect();
-            for tag in search_tags {
-                conditions.push("COALESCE(tags, '') LIKE ?".to_string());
-                params.push(format!("%{}%", tag)); // 単純な部分一致
-            }
-        }
-        
         if let Some(site) = filters.site {
-            conditions.push("site LIKE ?".to_string());
+            conditions.push("s.name LIKE ?".to_string());
             params.push(format!("%{}%", site));
         }
     }
@@ -274,12 +299,20 @@ fn get_articles(
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
     
     let articles = stmt.query_map(&param_refs[..], |row| {
-        Ok(Article {
-            url: row.get(0)?,
-            title: row.get(1)?,
-            site: row.get(2)?,
-            tags: row.get(3)?,
-            updated_at: row.get(4)?,
+        let tags_str: Option<String> = row.get(4)?;
+        let tags = if let Some(tags_str) = tags_str {
+            tags_str.split(',').map(|tag| tag.trim().to_string()).collect()
+        } else {
+            Vec::new()
+        };        
+        Ok(ArticleWithDetails  {
+            id: row.get(0)?,
+            url: row.get(1)?,
+            title: row.get(2)?,
+            site_name: Some(row.get(3)?),
+            tags,
+            created_at: row.get(5)?,
+            updated_at: row.get(6)?,
         })
     }).map_err(|e| e.to_string())?;
     
@@ -294,56 +327,55 @@ fn get_articles(
 #[tauri::command]
 fn save_article(state: State<AppState>, request: SaveArticleRequest) -> Result<String, String> {
     println!("記事保存開始: {}", request.url);
-    
-    let db = state.db.lock().map_err(|e| {
-        eprintln!("データベースロックエラー: {}", e);
-        e.to_string()
-    })?;
-    
-    let normalized_url = normalize_url(&request.url);
-    let parsed_url = Url::parse(&normalized_url).map_err(|e| {
-        eprintln!("URL解析エラー: {}", e);
-        e.to_string()
-    })?;
-    let site = parsed_url.host_str().unwrap_or("").replace("www.", "");
-    
-    let mut stmt = db.prepare("SELECT title FROM articles WHERE url = ?").map_err(|e| {
-        eprintln!("SQLクエリ準備エラー: {}", e);
-        e.to_string()
-    })?;
-    let existing = stmt.query_row([&normalized_url], |_| Ok(())).optional().map_err(|e| {
-        eprintln!("既存記事チェックエラー: {}", e);
-        e.to_string()
-    })?;
-    
-    let result = if existing.is_some() {
-        let tags = request.tags.unwrap_or_default();
-        db.execute(
-            "UPDATE articles SET title = ?, tags = ?, updated_at = CURRENT_TIMESTAMP WHERE url = ?",
-            params![request.title, tags, normalized_url],
-        ).map_err(|e| {
-            eprintln!("記事更新エラー: {}", e);
-            e.to_string()
-        })?;
-        println!("記事を更新しました: {}", normalized_url);
-        "updated".to_string()
-    } else {
-        let tags = request.tags.unwrap_or_default();
-        db.execute(
-            "INSERT INTO articles (url, title, site, tags) VALUES (?, ?, ?, ?)",
-            params![normalized_url, request.title, site, tags],
-        ).map_err(|e| {
-            eprintln!("記事挿入エラー: {}", e);
-            e.to_string()
-        })?;
-        println!("新しい記事を作成しました: {}", normalized_url);
-        "created".to_string()
-    };
-    
-    println!("記事保存完了: {}", result);
-    Ok(result)
-}
 
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    let normalized_url = normalize_url(&request.url);
+    let parsed_url = Url::parse(&normalized_url).map_err(|e| e.to_string())?;
+    let site_name = parsed_url.host_str().unwrap_or("").replace("www.", "");
+    // ph.1 サイトID確定
+    let site_id = get_or_create_site(&db, &site_name)?;
+
+    // ph.2 記事の保存
+    println!("記事保存開始：{}", request.url);
+    db.execute(
+        "INSERT INTO articles (url, title, site_id, created_at, updated_at) 
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        params![normalized_url, request.title, site_id],
+    ).map_err(|e| e.to_string())?;
+
+    let article_id = db.last_insert_rowid();
+    println!("記事作成完了: {} (ID: {})", request.title, article_id);
+
+    // ph.3 タグの処理
+    if let Some(tags_str) = request.tags {
+        let tag_names: Vec<&str> = tags_str.split(',').map(|tag| tag.trim()).collect();
+        for tag_name in tag_names {
+            println!("処理中のタグ: '{}'", tag_name);
+            if !tag_name.is_empty() {
+                // 1. タグID取得/作成
+                let tag_id = get_or_create_tag(&db, tag_name)?;
+                
+                // 2. 記事-タグ関連を作成
+                println!("article_tags への INSERT: article_id={}, tag_id={}", article_id, tag_id);
+                
+                match db.execute(
+                    "INSERT INTO article_tags (article_id, tag_id) VALUES (?, ?)",
+                    params![article_id, tag_id]
+                ) {
+                    Ok(rows) => println!("article_tags INSERT 成功: {} rows", rows),
+                    Err(e) => println!("article_tags INSERT エラー: {}", e),
+                }
+            }
+        }
+    } else{
+        println!("タグなし（None）");
+    }
+
+    println!("記事保存完了");
+    Ok("created".to_string())
+}
+/* 
 #[tauri::command]
 fn update_article(state: State<AppState>, request: UpdateArticleRequest) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -356,7 +388,7 @@ fn update_article(state: State<AppState>, request: UpdateArticleRequest) -> Resu
     
     Ok(())
 }
-
+*/
 #[tauri::command]
 fn delete_article(state: State<AppState>, url: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -511,6 +543,52 @@ fn normalize_url(url: &str) -> String {
     }
 }
 
+fn get_or_create_site(db: &Connection, site_name: &str) -> Result<i64, String> {
+    // 登録済みサイトの検索（重複確認）
+    let mut stmt = db.prepare("SELECT id FROM sites WHERE name = ?")
+        .map_err(|e| e.to_string())?;
+
+    let site_id_opt = stmt.query_row([site_name],
+         |row| row.get(0)).optional().map_err(|e| e.to_string())?;
+    if let Some(site_id) = site_id_opt {
+        println!("既存サイト使用: {} (ID: {})", site_name, site_id);
+        Ok(site_id)
+    } else {
+        // 新しいサイトを作成（INSERT）
+        db.execute(
+            "INSERT INTO sites (name) VALUES (?)",
+            params![site_name],
+        ).map_err(|e| e.to_string())?;
+
+        // 作成したサイトのIDを取得
+        let site_id = db.last_insert_rowid();
+        println!("新規サイト作成: {} (ID: {})", site_name, site_id);
+        Ok(site_id)
+    }
+}
+
+fn get_or_create_tag(db: &Connection, tag_name: &str) -> Result<i64, String> {
+    let mut stmt = db.prepare("SELECT id FROM tags WHERE name = ?")
+        .map_err(|e| e.to_string())?;
+    
+    let tag_id_opt = stmt.query_row([tag_name], |row| row.get(0)).optional().map_err(|e| e.to_string())?;
+    
+    if let Some(tag_id) = tag_id_opt {
+        println!("既存タグ使用: {} (ID: {})", tag_name, tag_id);
+        Ok(tag_id)
+    } else {
+        // 新しいタグを作成
+        db.execute(
+            "INSERT INTO tags (name) VALUES (?)",
+            [tag_name]
+        ).map_err(|e| e.to_string())?;
+        
+        let tag_id = db.last_insert_rowid();
+        println!("新規タグ作成: {} (ID: {})", tag_name, tag_id);
+        Ok(tag_id)
+    }
+}
+
 fn url_preserve_targets(host: &str) -> bool {
     //TODO 将来的には設定ファイルから読み込みたい
     let url_preserve_sites = [
@@ -523,18 +601,19 @@ fn url_preserve_targets(host: &str) -> bool {
 
 fn init_database() -> Result<Connection> {
     let conn = Connection::open("atode.db")?;
-    
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS articles (
-            url TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            site TEXT,
-            tags TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-        [],
-    )?;
-    
+
+    conn.execute("PRAGMA foreign_keys = ON;", [])?;
+
+    let ddl_files = [
+        include_str!("ddl/001_create_sites.sql"),
+        include_str!("ddl/002_create_articles.sql"),
+        include_str!("ddl/003_create_tags.sql"),
+        include_str!("ddl/004_create_article_tags.sql")
+    ];
+
+    for ddl in ddl_files.iter() {
+        conn.execute(ddl, [])?;
+    }
+   
     Ok(conn)
 }
