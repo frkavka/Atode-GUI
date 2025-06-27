@@ -13,7 +13,6 @@ class AtodeApp {
     async init() {
         await this.loadArticles();
         await this.loadPopularTags();
-        await this.loadPopularSites();
         this.setupEventListeners();
         this.setupPeriodicRefresh();
     }
@@ -60,7 +59,6 @@ class AtodeApp {
                     console.log('🔄 リフレッシュが必要です。記事リストを更新します。');
                     await this.loadArticles();
                     await this.loadPopularTags();
-                    await this.loadPopularSites();
                 }
             } catch (error) {
                 console.error('リフレッシュチェックエラー:', error);
@@ -75,16 +73,6 @@ class AtodeApp {
         } catch (error) {
             console.error('人気タグ読み込みエラー:', error);
             this.popularTags = [];
-        }
-    }
-
-    async loadPopularSites() {
-        try {
-            this.popularSites = await invoke('get_popular_sites', { limit: 10 });
-            console.log('人気サイト読み込み完了:', this.popularSites.length, '件');
-        } catch (error) {
-            console.error('人気サイト読み込みエラー:', error);
-            this.popularSites = [];
         }
     }
 

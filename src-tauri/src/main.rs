@@ -62,7 +62,7 @@ struct ArticleWithDetails {
     created_at: String,
     updated_at: String,
 }
-// 後で消すと思う
+
 #[derive(Debug, Serialize, Deserialize)]
 struct SearchFilters {
     tag_query: Option<String>,
@@ -80,12 +80,6 @@ struct SaveArticleRequest {
 #[derive(Debug, Serialize, Deserialize)]
 struct TagCount {
     tag: String,
-    count: u32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct SiteCount {
-    site: String,
     count: u32,
 }
 
@@ -109,7 +103,7 @@ fn main() {
             // 記事管理
             get_articles,
             save_article,
-            //update_article, //一旦コメントアウト
+            update_article,
             delete_article,
             
             // システム操作
@@ -119,7 +113,7 @@ fn main() {
             
             // UX強化用
             get_popular_tags,
-            get_popular_sites,
+
         ])
         .setup(setup_application)
         .on_window_event(handle_window_event)
@@ -274,25 +268,36 @@ fn get_articles(
      LEFT JOIN sites s ON a.site_id = s.id
      LEFT JOIN article_tags at ON a.id = at.article_id
      LEFT JOIN tags t ON at.tag_id = t.id
-     GROUP BY a.id, a.url, a.title, s.name, a.created_at, a.updated_at
+     
     ".to_string();
 
     let mut conditions = Vec::new();
     let mut params: Vec<String> = Vec::new();
     
-    // TODO: フィルター処理（タグは後回し）
+    
     if let Some(filters) = filters {
+        // フィルター処理：サイト
         if let Some(site) = filters.site {
             conditions.push("s.name LIKE ?".to_string());
             params.push(format!("%{}%", site));
         }
+        // フィルター処理：タグ
+        if let Some(tag_query) = filters.tag_query{
+            let search_tags : Vec<&str> = tag_query.split(',').map(|t| t.trim()).collect();
+            for tag in search_tags{
+                conditions.push("t.name = ? COLLATE NOCASE".to_string());
+                params.push(tag.to_string());
+            }
+        }
     }
+ 
     
     if !conditions.is_empty() {
         query.push_str(" WHERE ");
         query.push_str(&conditions.join(" AND "));
     }
     
+    query.push_str(" GROUP BY a.id, a.url, a.title, s.name, a.created_at, a.updated_at ");
     query.push_str(" ORDER BY updated_at DESC");
     
     let mut stmt = db.prepare(&query).map_err(|e| e.to_string())?;
@@ -375,20 +380,48 @@ fn save_article(state: State<AppState>, request: SaveArticleRequest) -> Result<S
     println!("記事保存完了");
     Ok("created".to_string())
 }
-/* 
+
 #[tauri::command]
-fn update_article(state: State<AppState>, request: UpdateArticleRequest) -> Result<(), String> {
+fn update_article(state: State<AppState>, request: SaveArticleRequest) -> Result<(), String> {
+    println!("記事編集開始: {}", request.url);
     let db = state.db.lock().map_err(|e| e.to_string())?;
     
-    let tags = request.tags.unwrap_or_default();
+    // ph.1 更新対象の記事ID特定
+    let article_id = get_article_id_by_url(&db, &request.url)?;
+
+    // ph.2 記事の基本情報を更新
     db.execute(
-        "UPDATE articles SET title = ?, tags = ?, updated_at = CURRENT_TIMESTAMP WHERE url = ?",
-        params![request.title, tags, request.url],
+        "UPDATE articles SET title = ?, url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        params![request.title, request.url, article_id]
     ).map_err(|e| e.to_string())?;
-    
+
+    println!("記事基本情報更新完了");
+
+    // ph.3 既存のタグ-記事リレーションを削除
+    db.execute(
+        "DELETE FROM article_tags WHERE article_id = ?",
+        params![article_id]
+    ).map_err(|e| e.to_string())?;
+    println!("既存タグ関連削除完了");
+
+    // ph.4 タグ-記事リレーションを改めて登録
+    if let Some(tags_str) = request.tags {
+        let tag_names: Vec<&str> = tags_str.split(',').map(|tag| tag.trim()).collect();
+        for tag_name in tag_names {
+            if !tag_name.is_empty() {
+                let tag_id = get_or_create_tag(&db, tag_name)?;
+                db.execute(
+                    "INSERT INTO article_tags (article_id, tag_id) VALUES (?, ?)",
+                    params![article_id, tag_id]
+                ).map_err(|e| e.to_string())?;
+            }
+        }
+        println!("新しいタグ登録完了");
+    }
+    println!("記事編集完了");    
     Ok(())
 }
-*/
+
 #[tauri::command]
 fn delete_article(state: State<AppState>, url: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -459,18 +492,18 @@ fn save_active_page(state: State<AppState>) -> Result<String, String> {
 fn get_popular_tags(state: State<AppState>, limit: Option<usize>) -> Result<Vec<TagCount>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let limit = limit.unwrap_or(20);
-    
-    // TODO タグのテーブルを作って正規化する（汚いので）
+
     let mut stmt = db.prepare(
-        "SELECT 
-            TRIM(value) as tag, 
-            COUNT(*) as count 
-         FROM articles, 
-              json_each('[\"' || REPLACE(REPLACE(COALESCE(tags, ''), ',', '\",\"'), ' ', '') || '\"]')
-         WHERE tags IS NOT NULL AND tags != '' AND TRIM(value) != ''
-         GROUP BY TRIM(value) 
-         ORDER BY count DESC, tag ASC
-         LIMIT ?"
+        "SELECT
+           TRIM(t.name) as tag_name
+         , COUNT(*) as count
+        FROM tags t
+        JOIN article_tags at
+          ON t.id = at.tag_id
+        WHERE t.name != 'auto-saved' --暫定
+        GROUP BY TRIM(t.name) 
+        ORDER BY count DESC, t.name ASC
+        LIMIT ?"
     ).map_err(|e| e.to_string())?;
     
     let tag_counts = stmt.query_map([limit], |row| {
@@ -488,41 +521,11 @@ fn get_popular_tags(state: State<AppState>, limit: Option<usize>) -> Result<Vec<
     Ok(result)
 }
 
-// 人気サイトを取得
-#[tauri::command]
-fn get_popular_sites(state: State<AppState>, limit: Option<usize>) -> Result<Vec<SiteCount>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    let limit = limit.unwrap_or(10);
-    
-    let mut stmt = db.prepare(
-        "SELECT site, COUNT(*) as count 
-         FROM articles 
-         WHERE site IS NOT NULL AND site != ''
-         GROUP BY site 
-         ORDER BY count DESC, site ASC
-         LIMIT ?"
-    ).map_err(|e| e.to_string())?;
-    
-    let site_counts = stmt.query_map([limit], |row| {
-        Ok(SiteCount {
-            site: row.get(0)?,
-            count: row.get(1)?,
-        })
-    }).map_err(|e| e.to_string())?;
-    
-    let mut result = Vec::new();
-    for site_count in site_counts {
-        result.push(site_count.map_err(|e| e.to_string())?);
-    }
-    
-    Ok(result)
-}
-
 //================================================================================================
 // コマンド関連ファンクション等 - Functions and Sub procedures for command actions
 //================================================================================================
 
-
+// URL正規化（クエリパラメータ殺し）
 fn normalize_url(url: &str) -> String {
     if url.starts_with("file://") {
         // ローカルファイルの場合はそのまま返す
@@ -543,6 +546,7 @@ fn normalize_url(url: &str) -> String {
     }
 }
 
+// 登録サイトIDの特定
 fn get_or_create_site(db: &Connection, site_name: &str) -> Result<i64, String> {
     // 登録済みサイトの検索（重複確認）
     let mut stmt = db.prepare("SELECT id FROM sites WHERE name = ?")
@@ -567,6 +571,7 @@ fn get_or_create_site(db: &Connection, site_name: &str) -> Result<i64, String> {
     }
 }
 
+// 登録に使うタグの特定
 fn get_or_create_tag(db: &Connection, tag_name: &str) -> Result<i64, String> {
     let mut stmt = db.prepare("SELECT id FROM tags WHERE name = ?")
         .map_err(|e| e.to_string())?;
@@ -587,6 +592,15 @@ fn get_or_create_tag(db: &Connection, tag_name: &str) -> Result<i64, String> {
         println!("新規タグ作成: {} (ID: {})", tag_name, tag_id);
         Ok(tag_id)
     }
+}
+
+// 記事IDをurlから求める
+fn get_article_id_by_url(db: &Connection, url: &str) -> Result<i64, String> {
+    let mut stmt = db.prepare("SELECT id FROM articles WHERE url = ?")
+        .map_err(|e| e.to_string())?;
+    
+    stmt.query_row([url], |row| Ok(row.get(0)?))
+        .map_err(|e| e.to_string())
 }
 
 fn url_preserve_targets(host: &str) -> bool {
