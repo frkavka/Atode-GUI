@@ -1,5 +1,7 @@
 # Atode - Read Later Article Manager v0.1
 
+[English](README.md) | [日本語](README.ja.md)
+
 **When you think:**
 - `I found an interesting web page, but I can't read it right now.`
 - `I want to make technical references on the web easily accessible.`
