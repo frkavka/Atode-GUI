@@ -64,3 +64,6 @@ Contributions are welcome! Please feel free to submit issues, request a function
 
 ## License
 MIT License
+
+---
+Note: Atode（あとで, pronounced "a.to.de" not like "A to D") means 'later' in Japanese.
