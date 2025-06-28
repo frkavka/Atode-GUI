@@ -1,48 +1,64 @@
-# Atode - 後で読む記事管理ツール v0.1
+# Atode - Read Later Article Manager v0.1
 
-Webページを素早く保存して、後で読むためのデスクトップアプリケーションです。
+**When you think:**
+- `I found an interesting web page, but I can't read it right now.`
+- `I want to make technical references on the web easily accessible.`
 
-## 機能
+**Then this app helps you.**
+This is a desktop application for `saving and managing web pages to read later`, built with Tauri and Rust; therefore, it's `quick and light`.
 
-- 🔗 **クイック保存**: `Ctrl+Shift+S` でアクティブなブラウザページを瞬時に保存（※現在Windowsのみ対応）
-- 🏷️ **タグ管理**: 記事をタグで分類・検索          → 記事についているタグをクリックするとそれですぐに絞り込めます
-- 🌐 **サイト検索**: 特定のサイトの記事を絞り込み   → 記事についているサイト名をクリックするとそれですぐに絞り込めます
-- 📱 **システムトレイ**: バックグラウンドで常駐
-- 💾 **ローカル保存**: SQLiteでデータを安全に保存
-![image](https://github.com/user-attachments/assets/1a52fce9-402a-4df4-a220-b1c520c22447)
+## Features
 
+- 🔗 **Quick Save**: The hotkey `Ctrl+Shift+S` instantly saves a web page you're viewing (Windows only for now)
+- 🏷️ **Tag Management**: You can set tags on each saved article and search them by tags
+- 🌐 **Site filtering**: You can search saved articles by their sites such as 'google'
+- 📱 **System Tray**: Runs in background, so always accesible via `Ctrl+Shift+A`
+- 💾 **Local Storage**: Data saved securely with SQLite
+- ⚡ **Extremely Lightweight**: Only ~20MB RAM usage (vs 300MB+ for typical Electron apps)
+- 🚀 **Fast Performance**: Built with Tauri/Rust for native speed
 
-## セットアップ
-
-### 必要な環境
-- Node.js
-- Rust
-- Windows (現在Windowsのみ対応)
-
-### インストール
+## Installation (for developping ver)
+### Requirements
 ```bash
+Node.js
+Rust
+Windows (macOS/Linux support planned)
+```
+### Setup
+```
 git clone https://github.com/frkavka/Atode-GUI.git
 cd Atode-GUI
 npm install
 npm run dev
 ```
 
-## ショートカットキー
-- `Ctrl+Shift+S`: 現在のブラウザページを保存
-- `Ctrl+Shift+A`: アプリの表示/非表示切り替え
+## Usage
+### Keyboard Shortcuts
+- `Ctrl+Shift+S`: Save current browser page
+- `Ctrl+Shift+A`: Show/hide app window
 
-## 技術スタック
-- **フロントエンド**: HTML/CSS/JavaScript
-- **バックエンド**: Rust (Tauri)
-- **データベース**: SQLite
-- **ビルド**: Tauri v1.6.3
+### Quick Workflow(for Win)
 
-## 今後の機能案
-- 見た目の改善
-- 特定のサイトでは、クエリパラメータ殺しを無効にする（youtubeで個別動画に繋がるようになる等）
-- マルチデバイス化？（「.db」の場所を任意指定にするだけでよいかも）
-- Mac / Linux対応？
-- メモ欄の追加？
-- 既読/未読？
-- 保存済み内容のエクスポート？
-- AI活用？
+1. Browse the web normally
+2. Found something interesting? Press Ctrl+Shift+S
+3. Article is automatically saved with current page title and URL
+4. Open Atode later to browse, search, and read your saved articles
+
+## Tech Stack
+- Frontend: HTML/CSS/JavaScript
+- Backend: Rust (Tauri v1.6.3)
+- Database: SQLite
+- Platform: currently for Windows
+
+## Roadmap(draft)
+- [ ] macOS and Linux support
+- [ ] preserve query parameters for specific sites(currently, possible only for youtube)
+- [ ] Export/import functionality
+- [ ] add note section on each article
+- [ ] something, utilizing AI 
+
+## Contributing
+Contributions are welcome! Please feel free to submit issues, request a function, pull request.
+
+## License
+MIT License
