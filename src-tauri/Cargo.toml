@@ -23,6 +23,8 @@ serde_json = "1.0"
 rusqlite = { version = "0.29", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 url = "2.4"
+regex = "1.10"
+once_cell = "1.19"
 
 [dependencies.windows]
 version = "0.48"
@@ -35,7 +37,6 @@ features = [
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "processthreadsapi"] }
 
-# 🔥 重要: custom-protocolフィーチャーの設定
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

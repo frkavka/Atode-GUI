@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Mutex, atomic::{AtomicBool, Ordering}};
 use rusqlite::{params, Connection, Result, OptionalExtension};
 use url::Url;
+use regex::Regex;
+use once_cell::sync::Lazy;
 
 // ブラウザ情報取得モジュール
 mod browser;
@@ -86,6 +88,21 @@ struct TagCount {
 struct AppState {
     db: Mutex<Connection>,
 }
+
+// 自動タグ付け用正規表現
+// 正規表現を一度だけコンパイル（プログラム起動時）
+static PREFIX_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(www\.|m\.|mobile\.|app\.|beta\.|dev\.|staging\.|blog\.|news\.|support\.|help\.|doc\.|api\.|cdn\.|static\.|shop\.|jp\.)").unwrap()
+});
+
+static COMPOUND_TLD_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\.(co|com|ac|or|ne|go|ed|gov)\.[a-z]{2,3}$").unwrap()
+});
+
+static TLD_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\.(com|net|org|edu|gov|mil|int|info|biz|name|pro|jp|us|uk|de|fr|ca|au|cn|kr|in|br|ru|it|es|io|ai|co|me|tv|cc|ly|app|dev|tech|blog|news|shop)$").unwrap()
+});
+
 
 //================================================================================================
 // メイン処理 - Main Procedure
@@ -470,10 +487,14 @@ fn save_active_page(state: State<AppState>) -> Result<String, String> {
         }
     };
     
+    // タグ自動生成
+    let auto_tags = auto_tagging(browser_info.url.clone());
+    println!("生成されたタグ: {}", auto_tags);
+    
     let request = SaveArticleRequest {
         url: browser_info.url,
         title: browser_info.title,
-        tags: Some("auto-saved".to_string()),
+        tags: Some(auto_tags),
     };
     
     let result = save_article(state, request)?;
@@ -630,4 +651,92 @@ fn init_database() -> Result<Connection> {
     }
    
     Ok(conn)
+}
+
+// 自動タグ付け
+fn auto_tagging(url: String) -> String{
+    let mut tags: Vec<String> = Vec::with_capacity(3);
+    
+    // URLクレートでサイト名を抽出
+    if let Ok(parsed_url) = Url::parse(&url){
+        if let Some(host) = parsed_url.host_str(){
+            //ホスト名クリーンアップ（よくあるprefix, suffix排除）
+            let clean_site = clean_hostname(host);
+            
+            if clean_site.len() > 1 {
+                // サイト名のタグを追加
+                tags.push(clean_site.clone());
+                // 推奨タグの自動付与
+                add_essential_tags(&mut tags, &clean_site);
+            }
+        
+        }
+    }
+    // 空の場合は空文字を返す
+    if tags.is_empty() {
+        return String::new();
+    }
+    
+    // 重複削除とソート
+    tags.sort_unstable();
+    tags.dedup();
+    
+    tags.join(", ")
+}
+
+fn clean_hostname(host: &str) -> String {
+    let mut input = host.to_lowercase();
+    
+    // prefix(www.など）除去
+    if let Some(captures) = PREFIX_RE.find(&input){
+        input.drain(0..captures.end());
+    }
+    
+    // suffix除去（co.jpみたいなの→.comみたいなのの順）
+    if let Some(captures) = COMPOUND_TLD_RE.find(&input) {
+        input.truncate(captures.start());
+    } else if let Some(captures) = TLD_RE.find(&input) {
+        input.truncate(captures.start());
+    }
+    
+    input
+  
+}
+
+#[inline]
+fn add_essential_tags(tags: &mut Vec<String>, site: &str) {
+    match site {
+        // AI系
+        "claude" | "chatgpt" | "openai" | "anthropic" | "gemini"  => {
+            tags.push("ai".to_string());
+        }
+        
+        // プログラミング系
+        "github" | "gitlab" | "stackoverflow" | "qiita" | "zenn" => {
+            tags.push("programming".to_string());
+        }
+        
+        // リファレンス系
+        "wikipedia" | "mdn" => {
+            tags.push("reference".to_string());
+        }
+        
+        // 動画系
+        "youtube" | "vimeo" | "twitch" => {
+            tags.push("video".to_string());
+        }
+        
+        // ソーシャル系
+        "twitter" | "x" | "reddit" | "facebook" => {
+            tags.push("social".to_string());
+        }
+        
+        // ショッピング系
+        "amazon" | "rakuten" => {
+            tags.push("shopping".to_string());
+        }
+        
+        // その他は追加タグなし（サイト名だけで十分）
+        _ => {}
+    }
 }
