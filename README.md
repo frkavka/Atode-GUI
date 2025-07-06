@@ -76,10 +76,9 @@ Requirements: Node.js, Rust, Windows(right now)
 
 
 
-## Roadmap
+## Ideas for Future
 ```
-Note: This roadmap represents potential ideas and directions.
-Implementation order and features may change based on community feedback and development priorities.
+Note: Actual commitment is not guaranteed.
 ```
 - [ ] macOS and Linux support
 - [ ] multi language support
