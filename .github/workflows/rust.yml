@@ -28,7 +28,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
     
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -39,8 +40,6 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-    
-    # macOS用のTauri CLI修正（削除）
       
     # Linux用の依存関係インストール
     - name: Install Linux dependencies
@@ -57,28 +56,35 @@ jobs:
           libayatana-appindicator3-dev \
           librsvg2-dev
           
+    # Windows: 従来通りnpm使用
     - name: Install dependencies (Windows)
       if: matrix.os == 'windows-latest'
       run: npm install
       
-    - name: Install dependencies (Linux/macOS)
+    # Linux/macOS: npm問題回避でCargo使用
+    - name: Install Tauri CLI (Linux/macOS)
       if: matrix.os != 'windows-latest'
-      run: |
-        npm install --ignore-optional
-        cargo install tauri-cli
+      run: cargo install tauri-cli
       
+    # Windows: npmスクリプト使用
     - name: Build Tauri app (Windows)
       if: matrix.os == 'windows-latest'
       run: npm run build:windows
       
-    - name: Build Tauri app (Linux/macOS)
+    # Linux/macOS: 手動ビルド
+    - name: Prepare and build (Linux/macOS)
       if: matrix.os != 'windows-latest'
       run: |
-        npm run prepare:unix
+        mkdir -p dist
+        cp src-web/main.js dist/bundle.js
+        cp src-web/index.html dist/index.html
+        cp src-web/styles.css dist/styles.css
         cargo tauri build
       
+    # === アーティファクト保存 (開発用) ===
+    
     # Windows artifacts
-    - name: Upload Windows artifacts (開発用)
+    - name: Upload Windows artifacts
       if: github.ref_type != 'tag' && matrix.platform == 'windows'
       uses: actions/upload-artifact@v4
       with:
@@ -86,7 +92,7 @@ jobs:
         path: src-tauri/target/release/bundle/msi/*.msi
         
     # macOS artifacts  
-    - name: Upload macOS artifacts (開発用)
+    - name: Upload macOS artifacts
       if: github.ref_type != 'tag' && matrix.platform == 'macos'
       uses: actions/upload-artifact@v4
       with:
@@ -96,7 +102,7 @@ jobs:
           src-tauri/target/release/bundle/dmg/*.dmg
           
     # Linux artifacts
-    - name: Upload Linux artifacts (開発用)
+    - name: Upload Linux artifacts
       if: github.ref_type != 'tag' && matrix.platform == 'linux'
       uses: actions/upload-artifact@v4
       with:
@@ -105,7 +111,8 @@ jobs:
           src-tauri/target/release/bundle/deb/*.deb
           src-tauri/target/release/bundle/appimage/*.AppImage
         
-    # タグがpushされた時のみリリース作成
+    # === リリース作成 (タグ時のみ) ===
+    
     - name: Create Release
       if: github.ref_type == 'tag'
       uses: softprops/action-gh-release@v1
