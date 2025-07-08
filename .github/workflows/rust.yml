@@ -12,20 +12,7 @@ env:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            platform: windows
-            arch: x64
-          - os: macos-latest
-            platform: macos
-            arch: universal
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
 
     steps:
     - name: Checkout code
@@ -38,118 +25,65 @@ jobs:
         
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
       
-    # Linux用の依存関係インストール
-    - name: Install Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
+    - name: Clean npm cache and install
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          libwebkit2gtk-4.1-dev \
-          build-essential \
-          curl \
-          wget \
-          libssl-dev \
-          libgtk-3-dev \
-          libayatana-appindicator3-dev \
-          librsvg2-dev
-          
-    # Windows: 従来通りnpm使用
-    - name: Install dependencies (Windows)
-      if: matrix.os == 'windows-latest'
-      run: npm install
+        npm cache clean --force
+        Remove-Item package-lock.json -ErrorAction SilentlyContinue
+        npm install
       
-    # Linux/macOS: npm問題回避でCargo使用
-    - name: Install Tauri CLI (Linux/macOS)
-      if: matrix.os != 'windows-latest'
-      run: cargo install tauri-cli
-      
-    # Windows: npmスクリプト使用
-    - name: Build Tauri app (Windows)
-      if: matrix.os == 'windows-latest'
+    - name: Build Tauri app
       run: npm run build:windows
       
-    # Linux/macOS: 手動ビルド
-    - name: Prepare and build (Linux/macOS)
-      if: matrix.os != 'windows-latest'
-      run: |
-        mkdir -p dist
-        cp src-web/main.js dist/bundle.js
-        cp src-web/index.html dist/index.html
-        cp src-web/styles.css dist/styles.css
-        cargo tauri build
-      
-    # === アーティファクト保存 (開発用) ===
-    
-    # Windows artifacts
-    - name: Upload Windows artifacts
-      if: github.ref_type != 'tag' && matrix.platform == 'windows'
+    - name: Upload Windows artifacts (開発用)
+      if: github.ref_type != 'tag'
       uses: actions/upload-artifact@v4
       with:
-        name: atode-windows-${{ matrix.arch }}
+        name: atode-windows-x64
         path: src-tauri/target/release/bundle/msi/*.msi
         
-    # macOS artifacts  
-    - name: Upload macOS artifacts
-      if: github.ref_type != 'tag' && matrix.platform == 'macos'
-      uses: actions/upload-artifact@v4
-      with:
-        name: atode-macos-${{ matrix.arch }}
-        path: |
-          src-tauri/target/release/bundle/macos/*.app
-          src-tauri/target/release/bundle/dmg/*.dmg
-          
-    # Linux artifacts
-    - name: Upload Linux artifacts
-      if: github.ref_type != 'tag' && matrix.platform == 'linux'
-      uses: actions/upload-artifact@v4
-      with:
-        name: atode-linux-${{ matrix.arch }}
-        path: |
-          src-tauri/target/release/bundle/deb/*.deb
-          src-tauri/target/release/bundle/appimage/*.AppImage
-        
-    # === リリース作成 (タグ時のみ) ===
-    
+    # タグがpushされた時のみリリース作成
     - name: Create Release
       if: github.ref_type == 'tag'
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          src-tauri/target/release/bundle/msi/*.msi
-          src-tauri/target/release/bundle/macos/*.app
-          src-tauri/target/release/bundle/dmg/*.dmg
-          src-tauri/target/release/bundle/deb/*.deb
-          src-tauri/target/release/bundle/appimage/*.AppImage
+        files: src-tauri/target/release/bundle/msi/*.msi
         generate_release_notes: true
         draft: false
         prerelease: false
         body: |
-          ## Atode ${{ github.ref_name }}
+          ## Atode ${{ github.ref_name }} - Windows Release
           
-          ### Downloads
-          - **Windows**: Download the `.msi` file
-          - **macOS**: Download the `.dmg` file  
-          - **Linux**: Download the `.deb` or `.AppImage` file
+          ### Download
+          - **Windows**: Download the `.msi` file below
           
-          ### Platform Support
-          - ✅ **Windows**: Full feature support including hotkeys
-          - ⚠️ **macOS**: Basic features (hotkeys not yet supported)
-          - ⚠️ **Linux**: Basic features (hotkeys not yet supported)
+          ### Features
+          - ✅ **Full feature support** including hotkeys (`Ctrl+Shift+S`)
+          - ✅ **System tray integration** (`Ctrl+Shift+A`)
+          - ✅ **Local SQLite storage** - your data stays private
+          - ✅ **Tag-based organization** - organize with custom tags
+          - ✅ **Site-based filtering** - find articles by site
+          - ✅ **Cross-browser support** - works with Chrome, Edge, Firefox, etc.
           
-          ### What's New
-          - First stable release with core functionality
-          - Cross-platform support (Windows, macOS, Linux)
-          - Local SQLite storage
-          - Tag-based article organization
-          - Site-based filtering
+          ### What's New in v1.0
+          - First stable release
+          - Core functionality complete and tested
+          - Windows native performance with Rust + Tauri
+          - Lightweight (~20MB RAM usage)
           
-          ### Known Limitations
-          - Hotkey support is currently Windows-only
-          - Browser integration works best on Windows
+          ### System Requirements
+          - Windows 10 or later
+          - .NET Framework 4.5+ (usually pre-installed)
           
+          ### Coming Soon
+          - macOS support
+          - Linux support
+          - Multi-language UI
+          
+          ### Support
           For issues or feature requests, please visit the [Issues page](https://github.com/frkavka/Atode-GUI/issues).
+          
+          ---
+          **Note**: This release focuses on Windows to ensure the best user experience. Cross-platform support will be added in future releases.
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
