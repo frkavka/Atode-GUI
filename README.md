@@ -1,4 +1,4 @@
-# Atode - Read Later Article Manager v0.1
+# Atode - Read Later Article Manager v1.0
 [English](README.md) | [日本語](README.ja.md)
 
 ### Save any web article in 0.5 seconds with `Ctrl+Shift+S`
