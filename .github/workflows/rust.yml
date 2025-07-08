@@ -57,25 +57,25 @@ jobs:
           libayatana-appindicator3-dev \
           librsvg2-dev
           
-    - name: Install dependencies
-      run: |
-        if [ "${{ matrix.os }}" == "ubuntu-latest" ] || [ "${{ matrix.os }}" == "macos-latest" ]; then
-          # Linux/macOSではTauri CLIをCargoでインストール
-          npm install --ignore-optional
-          cargo install tauri-cli
-        else
-          # Windowsは従来通り
-          npm install
-        fi
+    - name: Install dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: npm install
       
-    - name: Build Tauri app
+    - name: Install dependencies (Linux/macOS)
+      if: matrix.os != 'windows-latest'
       run: |
-        if [ "${{ matrix.os }}" == "ubuntu-latest" ] || [ "${{ matrix.os }}" == "macos-latest" ]; then
-          npm run prepare:unix
-          cargo tauri build
-        else
-          npm run build:windows
-        fi
+        npm install --ignore-optional
+        cargo install tauri-cli
+      
+    - name: Build Tauri app (Windows)
+      if: matrix.os == 'windows-latest'
+      run: npm run build:windows
+      
+    - name: Build Tauri app (Linux/macOS)
+      if: matrix.os != 'windows-latest'
+      run: |
+        npm run prepare:unix
+        cargo tauri build
       
     # Windows artifacts
     - name: Upload Windows artifacts (開発用)
