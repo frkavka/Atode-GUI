@@ -5,3 +5,4 @@ dist/
 *.db
 *.bat
 *.log
+package-lock.json
