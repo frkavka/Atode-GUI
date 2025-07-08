@@ -45,8 +45,10 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
+        # 新しいパッケージを試して、失敗したら古いパッケージ
         sudo apt-get install -y \
-          libwebkit2gtk-4.0-dev \
+          libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
+        sudo apt-get install -y \
           build-essential \
           curl \
           wget \
