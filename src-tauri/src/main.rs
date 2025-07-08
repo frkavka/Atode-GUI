@@ -740,3 +740,57 @@ fn add_essential_tags(tags: &mut Vec<String>, site: &str) {
         _ => {}
     }
 }
+
+//================================================================================================
+// tests
+//================================================================================================
+#[cfg(test)]
+mod tests{
+    use super::*;
+    
+    #[test]
+    fn test_url_normalization(){
+        // URL正規化テスト（通常）
+        assert_eq!(
+            normalize_url("https://example.com/page?ref=123"),
+            "https://example.com/page"
+        );
+        assert_eq!(
+            normalize_url("https://github.com/user/repo"),
+            "https://github.com/user/repo"
+        );
+        
+	    // 特別扱い（GETパラメータを殺さない）ケース
+        assert_eq!(
+            normalize_url("https://www.youtube.com/watch?v=a1b2c3d4e5"),
+            "https://www.youtube.com/watch?v=a1b2c3d4e5"
+        );
+    
+        // ローカルファイル
+        assert_eq!(
+            normalize_url("file:///C:/Users/test/document.html"),
+            "file:///C:/Users/test/document.html"
+        );
+    }
+       
+    #[test]
+    fn test_auto_tagging(){
+        assert_eq!(
+            // prefix, suffix除去（単独）
+            auto_tagging("https://www.sample.com".to_string()),
+            "sample"
+        );
+        
+        assert_eq!(
+            // suffix除去（複合）
+            auto_tagging("https://www.example.co.jp".to_string()),
+            "example"
+        );
+        
+        assert_eq!(
+            // 推奨タグ
+            auto_tagging("https://github.com/user".to_string()),
+            "github, programming"
+        )
+    }
+}

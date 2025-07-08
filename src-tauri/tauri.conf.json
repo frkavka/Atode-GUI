@@ -34,6 +34,7 @@
     },
     "bundle": {
       "active": true,
+      "targets": ["msi", "app", "dmg"],
       "identifier": "com.atode.app",
       "icon": [
         "icons/icon.ico"
