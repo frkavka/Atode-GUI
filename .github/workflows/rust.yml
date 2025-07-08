@@ -39,16 +39,16 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+    
+    # macOS用のTauri CLI修正（削除）
       
     # Linux用の依存関係インストール
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        # 新しいパッケージを試して、失敗したら古いパッケージ
         sudo apt-get install -y \
-          libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
-        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
           build-essential \
           curl \
           wget \
@@ -57,11 +57,25 @@ jobs:
           libayatana-appindicator3-dev \
           librsvg2-dev
           
-    - name: Install dependencies
+    - name: Install dependencies (Windows)
+      if: matrix.os == 'windows-latest'
       run: npm install
       
-    - name: Build Tauri app
-      run: npm run build
+    - name: Install dependencies (Linux/macOS)
+      if: matrix.os != 'windows-latest'
+      run: |
+        npm install --ignore-optional
+        cargo install tauri-cli
+      
+    - name: Build Tauri app (Windows)
+      if: matrix.os == 'windows-latest'
+      run: npm run build:windows
+      
+    - name: Build Tauri app (Linux/macOS)
+      if: matrix.os != 'windows-latest'
+      run: |
+        npm run prepare:unix
+        cargo tauri build
       
     # Windows artifacts
     - name: Upload Windows artifacts (開発用)
