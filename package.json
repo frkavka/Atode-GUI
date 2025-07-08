@@ -1,14 +1,18 @@
 {
   "name": "atode-gui",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "後で読む記事管理ツール",
   "scripts": {
-    "prepare": "cmd /c \"if not exist dist mkdir dist\" && cmd /c \"copy src-web\\main.js dist\\bundle.js >nul\" && cmd /c \"copy src-web\\index.html dist\\index.html >nul\" && cmd /c \"copy src-web\\styles.css dist\\styles.css >nul\"",
+    "prepare": "mkdir -p dist && cp src-web/main.js dist/bundle.js && cp src-web/index.html dist/index.html && cp src-web/styles.css dist/styles.css",
+    "prepare:windows": "cmd /c \"if not exist dist mkdir dist\" && cmd /c \"copy src-web\\main.js dist\\bundle.js >nul\" && cmd /c \"copy src-web\\index.html dist\\index.html >nul\" && cmd /c \"copy src-web\\styles.css dist\\styles.css >nul\"",
     "dev": "npm run prepare && tauri dev",
+    "dev:windows": "npm run prepare:windows && tauri dev",
     "build": "npm run prepare && tauri build",
+    "build:windows": "npm run prepare:windows && tauri build",
     "info": "tauri info",
-    "clean": "cmd /c \"if exist dist rmdir /s /q dist\""
+    "clean": "rm -rf dist",
+    "clean:windows": "cmd /c \"if exist dist rmdir /s /q dist\""
   },
   "devDependencies": {
     "@tauri-apps/cli": "^1.6.3"
