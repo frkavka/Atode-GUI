@@ -15,6 +15,7 @@
     "clean:windows": "cmd /c \"if exist dist rmdir /s /q dist\""
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.6.3"
+    "@tauri-apps/cli": "^1.6.3",
+    "@tauri-apps/cli-darwin-arm64": "^1.6.3"
   }
 }
