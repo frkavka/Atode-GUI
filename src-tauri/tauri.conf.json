@@ -1,54 +1,13 @@
 {
+  "productName": "Atode",
+  "version": "0.0.1",
+  "identifier": "com.atode.app",
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "devPath": "../dist",
-    "distDir": "../dist",
-    "withGlobalTauri": true
+    "frontendDist": "../dist"
   },
-  "package": {
-    "productName": "Atode",
-    "version": "0.0.1"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false,
-      "shell": {
-        "all": false,
-        "open": true
-      },
-      "globalShortcut": {
-        "all": true
-      },
-      "window": {
-        "all": false,
-        "close": true,
-        "hide": true,
-        "show": true,
-        "maximize": true,
-        "minimize": true,
-        "unmaximize": true,
-        "unminimize": true,
-        "setFocus": true
-      }
-    },
-    "bundle": {
-      "active": true,
-      "targets": ["msi", "app", "dmg"],
-      "identifier": "com.atode.app",
-      "icon": [
-        "icons/icon.ico"
-      ],
-      "resources": [
-        "src/scripts/windows_get_url.ps1"
-      ]
-    },
-    "security": {
-      "csp": null
-    },
-    "systemTray": {
-      "iconPath": "icons/icon.ico"
-    },
+  "app": {
     "windows": [
       {
         "fullscreen": false,
@@ -61,6 +20,22 @@
         "closable": true,
         "label": "main"
       }
+    ],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.ico"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "app", "dmg"],
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "src/scripts/windows_get_url.ps1"
     ]
   }
 }
