@@ -6,7 +6,7 @@ use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex,
 };
 use tauri::{
@@ -18,7 +18,17 @@ use tauri::{
     // アプリケーション状態管理
     State,
 };
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+// Win32 APIホットキー実装用
+#[cfg(target_os = "windows")]
+use std::{mem, ptr, thread};
 use url::Url;
+#[cfg(target_os = "windows")]
+use winapi::um::winuser::{
+    DispatchMessageW, GetMessageW, PostQuitMessage, RegisterHotKey, TranslateMessage,
+    UnregisterHotKey, MSG, WM_HOTKEY,
+};
 
 // ブラウザ情報取得モジュール
 mod browser;
@@ -30,6 +40,37 @@ use browser::{get_active_browser_info, BrowserInfo};
 
 // グローバルなリフレッシュフラグ
 static REFRESH_NEEDED: AtomicBool = AtomicBool::new(false);
+
+// ホットキーデバウンス用のタイムスタンプ（ミリ秒）
+static LAST_SAVE_HOTKEY: AtomicU64 = AtomicU64::new(0);
+static LAST_TOGGLE_HOTKEY: AtomicU64 = AtomicU64::new(0);
+
+// ホットキー管理状態（登録済みかどうか）
+static HOTKEYS_REGISTERED: AtomicBool = AtomicBool::new(false);
+
+// Win32ネイティブホットキー状態
+static WIN32_HOTKEYS_ACTIVE: AtomicBool = AtomicBool::new(false);
+static WIN32_HOTKEY_THREAD_RUNNING: AtomicBool = AtomicBool::new(false);
+
+// Win32ホットキーID
+#[cfg(target_os = "windows")]
+const HOTKEY_SAVE_ID: i32 = 1001;
+#[cfg(target_os = "windows")]
+const HOTKEY_TOGGLE_ID: i32 = 1002;
+
+// Win32ホットキーコンバイネーション
+#[cfg(target_os = "windows")]
+const MOD_CTRL_SHIFT: u32 = 0x0002 | 0x0004; // MOD_CONTROL | MOD_SHIFT
+#[cfg(target_os = "windows")]
+const VK_S: u32 = 0x53;
+#[cfg(target_os = "windows")]
+const VK_A: u32 = 0x41;
+
+// Tauriホットキーシステムバイパスフラグ
+static BYPASS_TAURI_HOTKEYS: AtomicBool = AtomicBool::new(false);
+
+// デバウンス間隔（ミリ秒）
+const DEBOUNCE_MS: u64 = 500;
 
 // main
 #[derive(Debug, Serialize, Deserialize)]
@@ -114,6 +155,7 @@ fn main() {
     let db = init_database().expect("DB初期化失敗");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState { db: Mutex::new(db) })
         .invoke_handler(tauri::generate_handler![
             // 記事管理
@@ -129,9 +171,190 @@ fn main() {
             get_popular_tags,
         ])
         .setup(setup_application)
-        .on_window_event(|window, event| handle_window_event(window, event))
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .on_window_event(handle_window_event)
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                cleanup_on_exit(app_handle);
+            }
+        });
+}
+
+// Win32ネイティブホットキーシステム実装
+#[cfg(target_os = "windows")]
+fn setup_win32_hotkeys(
+    app_handle: AppHandle<tauri::Wry>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("🎆 Win32ネイティブホットキー初期化開始...");
+
+    // ホットキースレッドが既に実行中かチェック
+    if WIN32_HOTKEY_THREAD_RUNNING
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return Err("ホットキースレッドが既に実行中です".into());
+    }
+
+    // バックグラウンドスレッドでWin32ホットキーリスナーを実行
+    thread::spawn(move || {
+        if let Err(e) = run_win32_hotkey_loop(app_handle) {
+            eprintln!("❌ Win32ホットキーループエラー: {}", e);
+        }
+        WIN32_HOTKEY_THREAD_RUNNING.store(false, Ordering::Relaxed);
+    });
+
+    // スレッドの立ち上がりを待機
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    println!("✅ Win32ホットキースレッドが開始されました");
+    Ok(())
+}
+
+// Win32ホットキーメッセージループ
+#[cfg(target_os = "windows")]
+fn run_win32_hotkey_loop(
+    app_handle: AppHandle<tauri::Wry>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔥 Win32ホットキーループ開始");
+
+    unsafe {
+        // ホットキーを登録
+        let result1 = RegisterHotKey(ptr::null_mut(), HOTKEY_SAVE_ID, MOD_CTRL_SHIFT, VK_S);
+        let result2 = RegisterHotKey(ptr::null_mut(), HOTKEY_TOGGLE_ID, MOD_CTRL_SHIFT, VK_A);
+
+        if result1 != 0 {
+            println!("✅ Ctrl+Shift+S (Win32) 登録成功");
+        } else {
+            eprintln!("❌ Ctrl+Shift+S (Win32) 登録失敗");
+        }
+
+        if result2 != 0 {
+            println!("✅ Ctrl+Shift+A (Win32) 登録成功");
+        } else {
+            eprintln!("❌ Ctrl+Shift+A (Win32) 登録失敗");
+        }
+
+        if result1 == 0 && result2 == 0 {
+            return Err("Win32ホットキー登録に失敗しました".into());
+        }
+
+        WIN32_HOTKEYS_ACTIVE.store(true, Ordering::Relaxed);
+        println!("✅ Win32ホットキーシステムアクティベーション完了");
+
+        // メッセージループ
+        let mut msg: MSG = mem::zeroed();
+        loop {
+            let bret = GetMessageW(&mut msg, ptr::null_mut(), 0, 0);
+            if bret <= 0 {
+                break; // WM_QUIT またはエラー
+            }
+
+            if msg.message == WM_HOTKEY {
+                let hotkey_id = msg.wParam as i32;
+                match hotkey_id {
+                    HOTKEY_SAVE_ID => {
+                        handle_save_hotkey(&app_handle);
+                    }
+                    HOTKEY_TOGGLE_ID => {
+                        handle_toggle_hotkey(&app_handle);
+                    }
+                    _ => {}
+                }
+            }
+
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+
+        // クリーンアップ
+        let _ = UnregisterHotKey(ptr::null_mut(), HOTKEY_SAVE_ID);
+        let _ = UnregisterHotKey(ptr::null_mut(), HOTKEY_TOGGLE_ID);
+        WIN32_HOTKEYS_ACTIVE.store(false, Ordering::Relaxed);
+
+        println!("✅ Win32ホットキーループ終了");
+    }
+
+    Ok(())
+}
+
+// Ctrl+Shift+S ハンドラー
+#[cfg(target_os = "windows")]
+fn handle_save_hotkey(app_handle: &AppHandle<tauri::Wry>) {
+    if !should_execute_hotkey(&LAST_SAVE_HOTKEY) {
+        return;
+    }
+
+    println!("🔥 Win32: Ctrl+Shift+S アクティベーション");
+
+    let state = app_handle.state::<AppState>();
+    match save_active_page(state) {
+        Ok(result) => {
+            println!("✅ Win32クイック保存完了: {}", result);
+            REFRESH_NEEDED.store(true, Ordering::Relaxed);
+        }
+        Err(e) => {
+            eprintln!("❌ Win32クイック保存エラー: {}", e);
+        }
+    }
+}
+
+// Ctrl+Shift+A ハンドラー
+#[cfg(target_os = "windows")]
+fn handle_toggle_hotkey(app_handle: &AppHandle<tauri::Wry>) {
+    if !should_execute_hotkey(&LAST_TOGGLE_HOTKEY) {
+        return;
+    }
+
+    println!("🔥 Win32: Ctrl+Shift+A アクティベーション");
+
+    if let Some(window) = app_handle.get_webview_window("main") {
+        match window.is_visible() {
+            Ok(true) => {
+                println!("ウィンドウを非表示に");
+                let _ = window.hide();
+            }
+            Ok(false) => {
+                println!("ウィンドウを表示");
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            Err(e) => {
+                eprintln!("ウィンドウ状態エラー: {}", e);
+            }
+        }
+    }
+}
+
+// アプリ終了時のクリーンアップ処理
+fn cleanup_on_exit(app_handle: &AppHandle<tauri::Wry>) {
+    println!("🧹 アプリ終了 - Win32ホットキークリーンアップを実行中...");
+
+    // Win32ホットキーのクリーンアップ
+    #[cfg(target_os = "windows")]
+    {
+        if WIN32_HOTKEYS_ACTIVE.load(Ordering::Relaxed) {
+            unsafe {
+                let _ = UnregisterHotKey(ptr::null_mut(), HOTKEY_SAVE_ID);
+                let _ = UnregisterHotKey(ptr::null_mut(), HOTKEY_TOGGLE_ID);
+                // メッセージループを終了させる
+                PostQuitMessage(0);
+            }
+            WIN32_HOTKEYS_ACTIVE.store(false, Ordering::Relaxed);
+            WIN32_HOTKEY_THREAD_RUNNING.store(false, Ordering::Relaxed);
+            println!("✅ Win32ホットキークリーンアップ完了");
+        }
+    }
+
+    // Tauriホットキーのクリーンアップ
+    if let Err(e) = app_handle.global_shortcut().unregister_all() {
+        eprintln!("⚠️ 終了時のunregister_allエラー: {}", e);
+    }
+
+    // 全状態をリセット
+    HOTKEYS_REGISTERED.store(false, Ordering::Relaxed);
+
+    println!("✅ アプリ終了処理完了");
 }
 
 //================================================================================================
@@ -140,27 +363,203 @@ fn main() {
 
 fn setup_application(app: &mut tauri::App<tauri::Wry>) -> Result<(), Box<dyn std::error::Error>> {
     // アプリ起動時セットアップ
+    println!("🚀 アプリケーション初期化開始...");
 
     // システムトレイ作成
+    println!("🎛️ システムトレイ作成中...");
     create_system_tray(app.handle())?;
 
-    // TODO: ショートカット機能は後で plugin を使って実装
-    // Tauri 2.0では global_shortcut_manager() は削除されプラグインが必要
-    println!("注意: グローバルショートカットは現在無効化されています。プラグインが必要です。");
+    // グローバルショートカットの設定（エラーが発生してもアプリは継続）
+    println!("⌨️ グローバルショートカット設定中...");
+    match setup_global_shortcuts(app.handle()) {
+        Ok(_) => {
+            println!("✅ グローバルショートカット設定完了");
+        }
+        Err(e) => {
+            eprintln!(
+                "⚠️ グローバルショートカット設定でエラーが発生しましたが、アプリは継続します: {}",
+                e
+            );
+            eprintln!("   💡 ホットキーはシステムトレイから手動で操作できます");
+        }
+    }
+
+    println!("🎉 アプリケーション初期化完了");
+    Ok(())
+}
+
+fn setup_global_shortcuts(
+    app_handle: &AppHandle<tauri::Wry>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("⚙️ Win32ネイティブホットキーシステム初期化開始...");
+
+    // Win32ネイティブホットキーで置き換え
+    #[cfg(target_os = "windows")]
+    {
+        match setup_win32_hotkeys(app_handle.clone()) {
+            Ok(_) => {
+                println!("✅ Win32ネイティブホットキーシステム初期化成功");
+                WIN32_HOTKEYS_ACTIVE.store(true, Ordering::Relaxed);
+                HOTKEYS_REGISTERED.store(true, Ordering::Relaxed);
+                return Ok(());
+            }
+            Err(e) => {
+                println!(
+                    "⚠️ Win32ホットキー初期化失敗: {} - システムトレイフォールバック",
+                    e
+                );
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        println!("ℹ️ Windows以外のプラットフォーム: システムトレイのみ有効");
+    }
+
+    let mut success_count = 0;
+    let mut error_messages = Vec::new();
+
+    // Ctrl+Shift+S: クイック保存
+    match register_hotkey(app_handle, "ctrl+shift+s", "Ctrl+Shift+S", |app_handle| {
+        if !should_execute_hotkey(&LAST_SAVE_HOTKEY) {
+            return;
+        }
+
+        println!("🔥 Ctrl+Shift+S が押されました - クイック保存を実行");
+        let state = app_handle.state::<AppState>();
+        match save_active_page(state) {
+            Ok(result) => {
+                println!("✅ クイック保存完了: {}", result);
+                REFRESH_NEEDED.store(true, Ordering::Relaxed);
+            }
+            Err(e) => {
+                eprintln!("❌ クイック保存エラー: {}", e);
+            }
+        }
+    }) {
+        Ok(_) => {
+            success_count += 1;
+            println!("✅ Ctrl+Shift+S セットアップ成功");
+        }
+        Err(e) => {
+            error_messages.push(format!("Ctrl+Shift+S: {}", e));
+            println!("⚠️ Ctrl+Shift+S セットアップ失敗: {}", e);
+        }
+    }
+
+    // Ctrl+Shift+A: ウィンドウ表示切替
+    match register_hotkey(app_handle, "ctrl+shift+a", "Ctrl+Shift+A", |app_handle| {
+        if !should_execute_hotkey(&LAST_TOGGLE_HOTKEY) {
+            return;
+        }
+
+        println!("🔥 Ctrl+Shift+A が押されました - ウィンドウ表示切替");
+        if let Some(window) = app_handle.get_webview_window("main") {
+            match window.is_visible() {
+                Ok(true) => {
+                    println!("ウィンドウを非表示に");
+                    let _ = window.hide();
+                }
+                Ok(false) => {
+                    println!("ウィンドウを表示");
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                Err(e) => {
+                    eprintln!("ウィンドウ状態取得エラー: {}", e);
+                }
+            }
+        }
+    }) {
+        Ok(_) => {
+            success_count += 1;
+            println!("✅ Ctrl+Shift+A セットアップ成功");
+        }
+        Err(e) => {
+            error_messages.push(format!("Ctrl+Shift+A: {}", e));
+            println!("⚠️ Ctrl+Shift+A セットアップ失敗: {}", e);
+        }
+    }
+
+    // 結果の評価（フォールバック戦略の場合）
+    if success_count == 2 {
+        println!(
+            "🎉 全てのグローバルショートカット設定完了 ({}/2)",
+            success_count
+        );
+        HOTKEYS_REGISTERED.store(true, Ordering::Relaxed);
+    } else if success_count > 0 {
+        println!(
+            "⚠️ 一部のグローバルショートカット設定完了 ({}/2)",
+            success_count
+        );
+        println!("   📝 設定できなかったホットキーは、システムトレイから操作してください");
+        HOTKEYS_REGISTERED.store(true, Ordering::Relaxed);
+    } else {
+        println!("❌ グローバルショートカット設定失敗");
+        println!("   💡 システムトレイから全ての操作が可能です");
+        println!("   ℹ️ ホットキーの代わりにシステムトレイを使用してください");
+        // アプリは継続（エラーではなく機能制限）
+    }
+
+    println!("   📝 ホットキーが使用できない場合は、システムトレイから操作してください");
 
     Ok(())
+}
+
+// フォールバックホットキー登録（再起動時用）
+fn register_hotkey<F>(
+    _app_handle: &AppHandle<tauri::Wry>,
+    _shortcut_str: &str,
+    display_name: &str,
+    _callback: F,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: Fn(&AppHandle<tauri::Wry>) + Send + Sync + 'static + Clone,
+{
+    // Tauriホットキーシステヤバイパスしている場合
+    if BYPASS_TAURI_HOTKEYS.load(Ordering::Relaxed) {
+        println!(
+            "⚠️ {} Tauriホットキーシステムバイパス中 - スキップ",
+            display_name
+        );
+        return Err("ホットキーシステヤバイパス中".into());
+    }
+
+    // 通常の登録処理は実行しない（再起動時はエラーとなるため）
+    eprintln!(
+        "❌ {} フォールバック登録は再起動時に失敗します",
+        display_name
+    );
+    Err("再起動時のTauriホットキー登録は失敗します".into())
+}
+
+// デバウンス機能付きヘルパー関数
+fn should_execute_hotkey(last_timestamp: &AtomicU64) -> bool {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+
+    let last = last_timestamp.load(Ordering::Relaxed);
+
+    if now.saturating_sub(last) < DEBOUNCE_MS {
+        println!("⏱️ ホットキーデバウンス中 - 実行をスキップ");
+        return false;
+    }
+
+    last_timestamp.store(now, Ordering::Relaxed);
+    true
 }
 
 fn handle_window_event(window: &tauri::Window<tauri::Wry>, event: &tauri::WindowEvent) {
     // ウィンドウまわり制御
 
-    match event {
-        tauri::WindowEvent::CloseRequested { api, .. } => {
-            // ウィンドウを閉じる代わりに隠す
-            window.hide().unwrap();
-            api.prevent_close();
-        }
-        _ => {}
+    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        // ウィンドウを閉じる代わりに隠す
+        window.hide().unwrap();
+        api.prevent_close();
     }
 }
 
@@ -172,7 +571,7 @@ fn create_system_tray(
         .item(&MenuItem::with_id(
             app_handle,
             "show",
-            "Atodeを表示",
+            "表示/非表示切替",
             true,
             None::<&str>,
         )?)
@@ -214,8 +613,21 @@ fn handle_system_tray_menu_event(app: &AppHandle<tauri::Wry>, event: tauri::menu
     match event.id().as_ref() {
         "show" => {
             if let Some(window) = app.get_webview_window("main") {
-                window.show().unwrap();
-                window.set_focus().unwrap();
+                match window.is_visible() {
+                    Ok(true) => {
+                        let _ = window.hide();
+                        println!("システムトレイ: ウィンドウを非表示");
+                    }
+                    Ok(false) => {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        println!("システムトレイ: ウィンドウを表示");
+                    }
+                    Err(_) => {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
             }
         }
         "save_page" => {
@@ -227,6 +639,8 @@ fn handle_system_tray_menu_event(app: &AppHandle<tauri::Wry>, event: tauri::menu
             }
         }
         "quit" => {
+            println!("🧹 システムトレイから終了 - ホットキーを解除中...");
+            cleanup_on_exit(app);
             std::process::exit(0);
         }
         _ => {}
@@ -234,16 +648,33 @@ fn handle_system_tray_menu_event(app: &AppHandle<tauri::Wry>, event: tauri::menu
 }
 
 // システムトレイクリックイベントの処理
-fn handle_system_tray_click_event(_tray: &tauri::tray::TrayIcon<tauri::Wry>, event: TrayIconEvent) {
+fn handle_system_tray_click_event(tray: &tauri::tray::TrayIcon<tauri::Wry>, event: TrayIconEvent) {
     if let TrayIconEvent::Click {
         button: MouseButton::Left,
         button_state: MouseButtonState::Up,
         ..
     } = event
     {
-        // 左クリック処理
-        println!("トレイアイコンが左クリックされました");
-        // TODO: ウィンドウの表示/非表示切り替え
+        // 左クリックでウィンドウの表示/非表示切り替え
+        println!("トレイアイコンが左クリックされました - ウィンドウ切り替え");
+        let app_handle = tray.app_handle();
+        if let Some(window) = app_handle.get_webview_window("main") {
+            match window.is_visible() {
+                Ok(true) => {
+                    let _ = window.hide();
+                    println!("トレイクリック: ウィンドウを非表示");
+                }
+                Ok(false) => {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    println!("トレイクリック: ウィンドウを表示");
+                }
+                Err(_) => {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        }
     }
 }
 
@@ -358,20 +789,50 @@ fn save_article(state: State<AppState>, request: SaveArticleRequest) -> Result<S
     let normalized_url = normalize_url(&request.url);
     let parsed_url = Url::parse(&normalized_url).map_err(|e| e.to_string())?;
     let site_name = parsed_url.host_str().unwrap_or("").replace("www.", "");
+
     // ph.1 サイトID確定
     let site_id = get_or_create_site(&db, &site_name)?;
 
-    // ph.2 記事の保存
-    println!("記事保存開始：{}", request.url);
-    db.execute(
-        "INSERT INTO articles (url, title, site_id, created_at, updated_at) 
-         VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-        params![normalized_url, request.title, site_id],
-    )
-    .map_err(|e| e.to_string())?;
+    // ph.2 既存記事をチェック
+    let existing_article = db
+        .prepare("SELECT id FROM articles WHERE url = ?")
+        .and_then(|mut stmt| {
+            stmt.query_row([&normalized_url], |row| row.get::<_, i64>(0))
+                .optional()
+        })
+        .map_err(|e| e.to_string())?;
 
-    let article_id = db.last_insert_rowid();
-    println!("記事作成完了: {} (ID: {})", request.title, article_id);
+    let (article_id, result_status) = if let Some(existing_id) = existing_article {
+        // 既存記事を更新
+        println!("既存記事を更新: {} (ID: {})", request.title, existing_id);
+        db.execute(
+            "UPDATE articles SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            params![request.title, existing_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // 既存のタグ関連を削除
+        db.execute(
+            "DELETE FROM article_tags WHERE article_id = ?",
+            params![existing_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        (existing_id, "updated".to_string())
+    } else {
+        // 新規記事を作成
+        println!("記事保存開始：{}", request.url);
+        db.execute(
+            "INSERT INTO articles (url, title, site_id, created_at, updated_at) 
+             VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            params![normalized_url, request.title, site_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let new_id = db.last_insert_rowid();
+        println!("記事作成完了: {} (ID: {})", request.title, new_id);
+        (new_id, "created".to_string())
+    };
 
     // ph.3 タグの処理
     if let Some(tags_str) = request.tags {
@@ -401,8 +862,8 @@ fn save_article(state: State<AppState>, request: SaveArticleRequest) -> Result<S
         println!("タグなし（None）");
     }
 
-    println!("記事保存完了");
-    Ok("created".to_string())
+    println!("記事保存完了: {}", result_status);
+    Ok(result_status)
 }
 
 #[tauri::command]
@@ -650,7 +1111,7 @@ fn get_article_id_by_url(db: &Connection, url: &str) -> Result<i64, String> {
         .prepare("SELECT id FROM articles WHERE url = ?")
         .map_err(|e| e.to_string())?;
 
-    stmt.query_row([url], |row| Ok(row.get(0)?))
+    stmt.query_row([url], |row| row.get(0))
         .map_err(|e| e.to_string())
 }
 

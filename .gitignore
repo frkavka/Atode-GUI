@@ -6,3 +6,4 @@ dist/
 *.bat
 *.log
 package-lock.json
+nul

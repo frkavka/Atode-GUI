@@ -1,5 +1,5 @@
-// Tauri API
-const { invoke } = window.__TAURI__.tauri;
+// Tauri 2.0 API
+const invoke = window.__TAURI_INTERNALS__.invoke;
 
 class AtodeApp {
     constructor() {
@@ -446,11 +446,11 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Atode アプリケーションを初期化中...');
     
     const checkTauri = () => {
-        if (window.__TAURI__ && window.__TAURI__.tauri && window.__TAURI__.tauri.invoke) {
-            console.log('✅ Tauri API loaded successfully');
+        if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+            console.log('✅ Tauri 2.0 API loaded successfully');
             window.app = new AtodeApp();
         } else {
-            console.log('⏳ Waiting for Tauri API...');
+            console.log('⏳ Waiting for Tauri 2.0 API...');
             setTimeout(checkTauri, 100);
         }
     };

@@ -4,13 +4,16 @@
   "version": "1.0.0",
   "description": "後で読む記事管理ツール",
   "scripts": {
-    "prepare:windows": "cmd /c \"if not exist dist mkdir dist\" && cmd /c \"copy src-web\\main.js dist\\bundle.js >nul\" && cmd /c \"copy src-web\\index.html dist\\index.html >nul\" && cmd /c \"copy src-web\\styles.css dist\\styles.css >nul\"",
+    "prepare:windows": "cmd /c \"if not exist dist mkdir dist\" && cmd /c \"copy src-web\\main.js dist\\bundle.js >NUL\" && cmd /c \"copy src-web\\index.html dist\\index.html >NUL\" && cmd /c \"copy src-web\\styles.css dist\\styles.css >NUL\"",
     "dev:windows": "npm run prepare:windows && tauri dev",
     "build:windows": "npm run prepare:windows && tauri build",
     "info": "tauri info",
     "clean:windows": "cmd /c \"if exist dist rmdir /s /q dist\""
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.6.3"
+    "@tauri-apps/cli": "^2.7.1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.7.0"
   }
 }
