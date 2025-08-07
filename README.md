@@ -1,4 +1,4 @@
-# Atode - Read Later Article Manager v1.0
+# Atode - Read Later Article Manager v1.1
 [English](README.md) | [日本語](README.ja.md)
 
 ### Save any web article in 0.5 seconds with `Ctrl+Shift+S`
@@ -42,7 +42,7 @@ This is a desktop application for `saving and managing web pages to read later`,
 git clone https://github.com/frkavka/Atode-GUI.git
 cd Atode-GUI
 npm install
-npm run dev
+npm run dev:windows
 
 Requirements: Node.js, Rust, Windows(right now)
 ```
@@ -63,7 +63,7 @@ Requirements: Node.js, Rust, Windows(right now)
 
 ## Tech Stack
 - Frontend: HTML/CSS/JavaScript
-- Backend: Rust (Tauri v1.6.3)
+- Backend: Rust (Tauri v2.0)
 - Database: SQLite
 - Platform: currently for Windows
 
@@ -80,7 +80,8 @@ Requirements: Node.js, Rust, Windows(right now)
 ```
 Note: Actual commitment is not guaranteed.
 ```
-- [ ] macOS and Linux support
+- [ ] macOS support
+- [ ] Linux Support
 - [ ] multi language support
 - [ ] preserve query parameters for specific sites(currently, possible only for youtube)
 - [ ] Export/import functionality

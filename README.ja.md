@@ -1,70 +1,99 @@
-# Atode - 後で読む記事管理ツール v0.1
+# Atode - 後で読む記事管理ツール v1.1
 [English](README.md) | [日本語](README.ja.md)
 
+### `Ctrl+Shift+S`で0.5秒でWebページを保存
+![Atodemo1](https://github.com/user-attachments/assets/6a1d3ae5-16a1-482c-a530-8a5587ddc242)
+
+![Atodemo2](https://github.com/user-attachments/assets/cac7a776-3e42-433d-8b81-41d1c5f14174)
+
+**こんなときありませんか？**
 - `面白そうな記事だけど、今は時間がないな…`
 - `実装の参考に取っておきたいな…`
+- `技術資料をWebで簡単にアクセスできるようにしたい`
 
-こんなとき、ブラウザのタブが大量発生したり、ブックマークに雑多に入っていませんか？
-それを解消することを目指したツールです。
+**そんなときこのアプリが解決します**
+これは`後で読むWebページを保存・管理する`デスクトップアプリケーションで、TauriとRustで構築されているため`高速で軽量`です。
+
+<a href="https://github.com/frkavka/Atode-GUI/releases">📥 ダウンロード</a><br>
+<a href="https://github.com/frkavka/Atode-GUI/issues"> 🐛 バグ報告</a><br>
+<a href="https://github.com/frkavka/Atode-GUI/discussions"> 💡 要望・提案</a>
 
 
 
 ## 機能
 
-- 🔗 **クイック保存**: `Ctrl+Shift+S` で現在見ているWebページを瞬時に保存（現在Windowsのみ対応）
-- 🏷️ **タグ管理**: 保存した記事にタグを設定して、タグで検索可能
-- 🌐 **サイト絞り込み**: 'google' などのサイト名で保存した記事を検索可能
-- 📱 **システムトレイ**: バックグラウンドで動作し、`Ctrl+Shift+A` でいつでもアクセス可能
-- 💾 **ローカル保存**: SQLiteでデータを安全に保存
-- ⚡ **超軽量**: 執筆時点で、約20MBのRAM使用量（だから気にならない）
-- 🚀 **高速動作**: Tauri/Rustによるネイティブスピード
+- ⚡ **超高速保存**: `Ctrl+Shift+S`でページを瞬時に保存 - ブラウジングを邪魔しません
+- 🏷️ **スマートタグ機能**: `javascript`、`チュートリアル`、`研究`などのタグで記事を整理
+- 🌐 **サイト絞り込み**: 特定サイト（例：「github」「stackoverflow」）の記事をすべて検索
+- 🤫 **静かな動作**: 煩わしい通知なし - バックグラウンドで静かに動作
+- 📱 **システムトレイ**: `Ctrl+Shift+A`で常にアクセス可能、邪魔にならない
+- 💾 **100%プライベート**: すべてのデータをSQLiteでローカル保存 - クラウド無し、追跡無し
+- 🚀 **Rust性能**: RAM使用量約～20MBで軽量です
+- 🎯 **クロスブラウザ対応**: Chrome、Firefox、Edge、Brave、Opera で動作
 
-## インストール（開発版）
+## クイックスタート
+### Windowsユーザー
 
-### 必要な環境
-```bash
-Node.js
-Rust
-Windows（macOS/Linux対応予定）
-```
+1. 最新の`.msi`ファイルを <a href="https://github.com/frkavka/Atode-GUI/releases">リリース</a> からダウンロード<br>
+2. Atodeをインストールして実行
+3. 完了！任意の記事を見ながら`Ctrl+Shift+S`を押すだけ
 
-### セットアップ
+### 開発者
 ```bash
 git clone https://github.com/frkavka/Atode-GUI.git
 cd Atode-GUI
 npm install
-npm run dev
+npm run dev:windows
+
+必要環境: Node.js, Rust, Windows（現在）
 ```
 
-## 使用方法
+## 📖 使用方法
+### 基本ワークフロー
 
+1. **ブラウジング**: 任意のWebサイトで興味深い記事を見つける
+2. **保存**: Ctrl+Shift+Sを押す（どのブラウザでも動作）
+3. **整理**: Atodeを開いて、タグを追加、必要に応じてタイトルを編集
+4. **検索**: 後でタグやサイト名で検索
+5. **読む**: 記事タイトルをクリックしてブラウザで開く
+
+## キーボードショートカット
 ### ショートカットキー
 - `Ctrl+Shift+S`: 現在のブラウザページを保存
 - `Ctrl+Shift+A`: アプリウィンドウの表示/非表示
 
-### クイックワークフロー（Windows向け）
-
-1. 通常通りウェブブラウジング
-2. `後で読みたい・保存しておきたい`、そう思ったら `Ctrl+Shift+S`
-3. Atode内に、そのページが保存されている
-4. Atodeを開き、読む or タグやタイトルなどを整理する
-
 ## 技術スタック
-- **フロントエンド**: HTML/CSS/JavaScript
-- **バックエンド**: Rust (Tauri v1.6.3)
-- **データベース**: SQLite
-- **プラットフォーム**: 現在Windows対応
+- フロントエンド: HTML/CSS/JavaScript
+- バックエンド: Rust (Tauri v2.0)
+- データベース: SQLite
+- プラットフォーム: 現在Windows対応
 
-## ロードマップ（草案）
-- [ ] macOS と Linux 対応
+## タグ使用例
+- プロジェクト別: `project-a`、`project-b`
+- 技術別: `javascript`、`python`
+- 興味別: `ゲーム情報`、`2025年夏アニメ`
+
+## 今後のアイデア
+```
+注：実際に取り組むことは約束できません
+```
+- [ ] macOS対応
+- [ ] Linux対応
+- [ ] 多言語サポート
 - [ ] 特定サイトでのクエリパラメータ保持（現在はYouTubeのみ可能）
 - [ ] エクスポート/インポート機能
-- [ ] 各記事へのメモ欄追加
+- [ ] メモ機能
 - [ ] AI活用機能
 
-## コントリビューション
-動作不具合、機能要望などあったらお知らせいただけると助かります！
+## 🤝 コントリビューション
+
+- 🐛 バグ報告: Issueを作成
+- 💡 機能提案: Discussionを開始
+- 🔧 コード提出: Fork、コーディング、プルリクエスト作成
 
 ## ライセンス
 MIT License
+
+---
+**⭐ 便利だと思ったらスターをお願いします！**<br>
 
