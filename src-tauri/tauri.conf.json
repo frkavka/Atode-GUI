@@ -33,9 +33,6 @@
     "targets": ["msi", "app", "dmg"],
     "icon": [
       "icons/icon.ico"
-    ],
-    "resources": [
-      "src/scripts/windows_get_url.ps1"
     ]
   }
 }

@@ -12,12 +12,12 @@ pub struct BrowserInfo {
 /// 従来のget_active_browser_info()関数と同じインターフェースを提供
 pub fn get_active_browser_info() -> Result<BrowserInfo, String> {
     println!("🔍 browser-infoライブラリでブラウザ情報を取得中...");
-    
+
     // browser-infoライブラリの事前チェック
     if !browser_info::is_browser_active() {
         return Err("アクティブなブラウザが見つかりません".to_string());
     }
-    
+
     // browser-infoライブラリを使用してブラウザ情報を取得
     match browser_info::get_active_browser_info() {
         Ok(info) => {
@@ -25,7 +25,7 @@ pub fn get_active_browser_info() -> Result<BrowserInfo, String> {
             println!("  URL: {}", info.url);
             println!("  タイトル: {}", info.title);
             println!("  ブラウザ: {:?}", info.browser_type);
-            
+
             // browser-infoライブラリの構造体からAtode-GUI互換の構造体に変換
             Ok(BrowserInfo {
                 url: info.url,
@@ -34,7 +34,7 @@ pub fn get_active_browser_info() -> Result<BrowserInfo, String> {
         }
         Err(e) => {
             println!("❌ browser-infoライブラリエラー: {}", e);
-            
+
             // フォールバック: 独自実装を使用（後で削除予定）
             println!("🔄 フォールバック: 従来の独自実装を使用");
             fallback_get_browser_info()
@@ -47,11 +47,11 @@ pub fn get_active_browser_info() -> Result<BrowserInfo, String> {
 /// テスト期間後に削除予定
 fn fallback_get_browser_info() -> Result<BrowserInfo, String> {
     println!("⚠️ フォールバック実行中: 従来のPowerShell実装");
-    
+
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
-        
+
         // 簡易的なPowerShell実装（従来コードの簡略版）
         let powershell_script = r#"
             try {
@@ -67,15 +67,15 @@ fn fallback_get_browser_info() -> Result<BrowserInfo, String> {
                 Write-Output "https://example.com/fallback-error|フォールバックエラー"
             }
         "#;
-        
+
         let output = Command::new("powershell")
             .args(["-Command", powershell_script])
             .output()
             .map_err(|e| format!("PowerShellフォールバック実行エラー: {}", e))?;
-            
+
         let stdout = String::from_utf8_lossy(&output.stdout);
         let result_line = stdout.trim();
-        
+
         if let Some((url, title)) = result_line.split_once('|') {
             Ok(BrowserInfo {
                 url: url.to_string(),
@@ -88,7 +88,7 @@ fn fallback_get_browser_info() -> Result<BrowserInfo, String> {
             })
         }
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         Ok(BrowserInfo {

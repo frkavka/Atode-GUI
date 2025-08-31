@@ -32,7 +32,7 @@ use winapi::um::winuser::{
 
 // ブラウザ情報取得モジュール
 mod browser_info_bridge;
-use browser_info_bridge::{get_active_browser_info, BrowserInfo};
+use browser_info_bridge::get_active_browser_info;
 
 //================================================================================================
 // データ構造・モジュール変数等 - Data Types & Module Variables
