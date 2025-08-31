@@ -31,8 +31,8 @@ use winapi::um::winuser::{
 };
 
 // ブラウザ情報取得モジュール
-mod browser;
-use browser::{get_active_browser_info, BrowserInfo};
+mod browser_info_bridge;
+use browser_info_bridge::{get_active_browser_info, BrowserInfo};
 
 //================================================================================================
 // データ構造・モジュール変数等 - Data Types & Module Variables
@@ -956,13 +956,13 @@ fn save_active_page(state: State<AppState>) -> Result<String, String> {
     println!("自動保存開始...");
 
     let browser_info = match get_active_browser_info() {
-        Ok(info) => info,
+        Ok(info) => {
+            println!("✅ browser-infoライブラリでブラウザ情報取得成功");
+            info
+        }
         Err(e) => {
-            println!("ブラウザ情報取得失敗: {}, フォールバックを使用", e);
-            BrowserInfo {
-                url: "https://example.com/error-fallback".to_string(),
-                title: "自動取得に失敗 - 手動で編集してください".to_string(),
-            }
+            println!("❌ browser-infoライブラリでの取得失敗: {}", e);
+            return Err(format!("ブラウザ情報取得失敗: {}", e));
         }
     };
 
