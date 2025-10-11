@@ -1,15 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-/// Atode-GUI互換のBrowserInfo構造体
-/// browser-infoライブラリの構造体とは別に定義し、変換処理を行う
+/// `Atode-GUI`互換の`BrowserInfo`構造体
+/// `browser-info`ライブラリの構造体とは別に定義し、変換処理を行う
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BrowserInfo {
     pub url: String,
     pub title: String,
 }
 
-/// browser-infoライブラリを使用してブラウザ情報を取得
-/// 従来のget_active_browser_info()関数と同じインターフェースを提供
+/// `browser-info`ライブラリを使用してブラウザ情報を取得
+/// 従来の`get_active_browser_info()`関数と同じインターフェースを提供
 pub fn get_active_browser_info() -> Result<BrowserInfo, String> {
     println!("🔍 browser-infoライブラリでブラウザ情報を取得中...");
 
@@ -26,14 +26,14 @@ pub fn get_active_browser_info() -> Result<BrowserInfo, String> {
             println!("  タイトル: {}", info.title);
             println!("  ブラウザ: {:?}", info.browser_type);
 
-            // browser-infoライブラリの構造体からAtode-GUI互換の構造体に変換
+            // `browser-info`ライブラリの構造体から`Atode-GUI`互換の構造体に変換
             Ok(BrowserInfo {
                 url: info.url,
                 title: info.title,
             })
         }
         Err(e) => {
-            println!("❌ browser-infoライブラリエラー: {}", e);
+            println!("❌ browser-infoライブラリエラー: {e}");
 
             // フォールバック: 独自実装を使用（後で削除予定）
             println!("🔄 フォールバック: 従来の独自実装を使用");
@@ -43,7 +43,7 @@ pub fn get_active_browser_info() -> Result<BrowserInfo, String> {
 }
 
 /// フォールバック用の従来実装
-/// browser-infoライブラリが失敗した場合に使用
+/// `browser-info`ライブラリが失敗した場合に使用
 /// テスト期間後に削除予定
 fn fallback_get_browser_info() -> Result<BrowserInfo, String> {
     println!("⚠️ フォールバック実行中: 従来のPowerShell実装");
@@ -52,7 +52,7 @@ fn fallback_get_browser_info() -> Result<BrowserInfo, String> {
     {
         use std::process::Command;
 
-        // 簡易的なPowerShell実装（従来コードの簡略版）
+        // 簡易的な`PowerShell`実装（従来コードの簡略版）
         let powershell_script = r#"
             try {
                 $activeWindow = Get-Process | Where-Object { $_.MainWindowTitle -ne "" -and $_.ProcessName -match "(chrome|firefox|msedge|brave|opera)" } | Select-Object -First 1
@@ -71,7 +71,7 @@ fn fallback_get_browser_info() -> Result<BrowserInfo, String> {
         let output = Command::new("powershell")
             .args(["-Command", powershell_script])
             .output()
-            .map_err(|e| format!("PowerShellフォールバック実行エラー: {}", e))?;
+            .map_err(|e| format!("PowerShellフォールバック実行エラー: {e}"))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let result_line = stdout.trim();

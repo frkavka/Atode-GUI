@@ -1,0 +1,2 @@
+# 依存関係の重複警告を無効化（外部ライブラリの問題のため）
+# Note: This field is deprecated/removed in newer clippy versions

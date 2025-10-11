@@ -3,8 +3,11 @@ name = "src-tauri"
 version = "1.2.0"
 description = "後で読む記事管理ツール"
 authors = ["you"]
-license = ""
-repository = ""
+license = "MIT"
+repository = "https://github.com/frkavka/Atode-GUI"
+readme = "../README.md"
+keywords = ["tauri", "article-manager", "read-later", "sqlite"]
+categories = ["gui", "utility"]
 edition = "2021"
 
 [build-dependencies]
@@ -19,7 +22,6 @@ rusqlite = { version = "0.29", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 url = "2.4"
 regex = "1.10"
-once_cell = "1.19"
 browser-info = "1.0"
 
 [dependencies.windows]

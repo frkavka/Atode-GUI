@@ -1,10 +1,11 @@
 //================================================================================================
 // 依存関係 - Import Section
 //================================================================================================
-use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex,
@@ -72,6 +73,12 @@ static BYPASS_TAURI_HOTKEYS: AtomicBool = AtomicBool::new(false);
 // デバウンス間隔（ミリ秒）
 const DEBOUNCE_MS: u64 = 500;
 
+// 設定ファイル構造体
+#[derive(Debug, Serialize, Deserialize)]
+struct Config {
+    database_path: String,
+}
+
 // main
 #[derive(Debug, Serialize, Deserialize)]
 struct Article {
@@ -136,14 +143,14 @@ struct AppState {
 
 // 自動タグ付け用正規表現
 // 正規表現を一度だけコンパイル（プログラム起動時）
-static PREFIX_RE: Lazy<Regex> = Lazy::new(|| {
+static PREFIX_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^(www\.|m\.|mobile\.|app\.|beta\.|dev\.|staging\.|blog\.|news\.|support\.|help\.|doc\.|api\.|cdn\.|static\.|shop\.|jp\.)").unwrap()
 });
 
-static COMPOUND_TLD_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\.(co|com|ac|or|ne|go|ed|gov)\.[a-z]{2,3}$").unwrap());
+static COMPOUND_TLD_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\.(co|com|ac|or|ne|go|ed|gov)\.[a-z]{2,3}$").unwrap());
 
-static TLD_RE: Lazy<Regex> = Lazy::new(|| {
+static TLD_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"\.(com|net|org|edu|gov|mil|int|info|biz|name|pro|jp|us|uk|de|fr|ca|au|cn|kr|in|br|ru|it|es|io|ai|co|me|tv|cc|ly|app|dev|tech|blog|news|shop)$").unwrap()
 });
 
@@ -152,7 +159,8 @@ static TLD_RE: Lazy<Regex> = Lazy::new(|| {
 //================================================================================================
 
 fn main() {
-    let db = init_database().expect("DB初期化失敗");
+    let config = load_config();
+    let db = init_database(&config.database_path).expect("DB初期化失敗");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -198,8 +206,8 @@ fn setup_win32_hotkeys(
 
     // バックグラウンドスレッドでWin32ホットキーリスナーを実行
     thread::spawn(move || {
-        if let Err(e) = run_win32_hotkey_loop(app_handle) {
-            eprintln!("❌ Win32ホットキーループエラー: {}", e);
+        if let Err(e) = run_win32_hotkey_loop(&app_handle) {
+            eprintln!("❌ Win32ホットキーループエラー: {e}");
         }
         WIN32_HOTKEY_THREAD_RUNNING.store(false, Ordering::Relaxed);
     });
@@ -214,7 +222,7 @@ fn setup_win32_hotkeys(
 // Win32ホットキーメッセージループ
 #[cfg(target_os = "windows")]
 fn run_win32_hotkey_loop(
-    app_handle: AppHandle<tauri::Wry>,
+    app_handle: &AppHandle<tauri::Wry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("🔥 Win32ホットキーループ開始");
 
@@ -251,13 +259,14 @@ fn run_win32_hotkey_loop(
             }
 
             if msg.message == WM_HOTKEY {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
                 let hotkey_id = msg.wParam as i32;
                 match hotkey_id {
                     HOTKEY_SAVE_ID => {
-                        handle_save_hotkey(&app_handle);
+                        handle_save_hotkey(app_handle);
                     }
                     HOTKEY_TOGGLE_ID => {
-                        handle_toggle_hotkey(&app_handle);
+                        handle_toggle_hotkey(app_handle);
                     }
                     _ => {}
                 }
@@ -290,11 +299,11 @@ fn handle_save_hotkey(app_handle: &AppHandle<tauri::Wry>) {
     let state = app_handle.state::<AppState>();
     match save_active_page(state) {
         Ok(result) => {
-            println!("✅ Win32クイック保存完了: {}", result);
+            println!("✅ Win32クイック保存完了: {result}");
             REFRESH_NEEDED.store(true, Ordering::Relaxed);
         }
         Err(e) => {
-            eprintln!("❌ Win32クイック保存エラー: {}", e);
+            eprintln!("❌ Win32クイック保存エラー: {e}");
         }
     }
 }
@@ -320,7 +329,7 @@ fn handle_toggle_hotkey(app_handle: &AppHandle<tauri::Wry>) {
                 let _ = window.set_focus();
             }
             Err(e) => {
-                eprintln!("ウィンドウ状態エラー: {}", e);
+                eprintln!("ウィンドウ状態エラー: {e}");
             }
         }
     }
@@ -348,7 +357,7 @@ fn cleanup_on_exit(app_handle: &AppHandle<tauri::Wry>) {
 
     // Tauriホットキーのクリーンアップ
     if let Err(e) = app_handle.global_shortcut().unregister_all() {
-        eprintln!("⚠️ 終了時のunregister_allエラー: {}", e);
+        eprintln!("⚠️ 終了時のunregister_allエラー: {e}");
     }
 
     // 全状態をリセット
@@ -371,43 +380,27 @@ fn setup_application(app: &mut tauri::App<tauri::Wry>) -> Result<(), Box<dyn std
 
     // グローバルショートカットの設定（エラーが発生してもアプリは継続）
     println!("⌨️ グローバルショートカット設定中...");
-    match setup_global_shortcuts(app.handle()) {
-        Ok(_) => {
-            println!("✅ グローバルショートカット設定完了");
-        }
-        Err(e) => {
-            eprintln!(
-                "⚠️ グローバルショートカット設定でエラーが発生しましたが、アプリは継続します: {}",
-                e
-            );
-            eprintln!("   💡 ホットキーはシステムトレイから手動で操作できます");
-        }
-    }
+    setup_global_shortcuts(app.handle());
 
     println!("🎉 アプリケーション初期化完了");
     Ok(())
 }
 
-fn setup_global_shortcuts(
-    app_handle: &AppHandle<tauri::Wry>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn setup_global_shortcuts(app_handle: &AppHandle<tauri::Wry>) {
     println!("⚙️ Win32ネイティブホットキーシステム初期化開始...");
 
     // Win32ネイティブホットキーで置き換え
     #[cfg(target_os = "windows")]
     {
         match setup_win32_hotkeys(app_handle.clone()) {
-            Ok(_) => {
+            Ok(()) => {
                 println!("✅ Win32ネイティブホットキーシステム初期化成功");
                 WIN32_HOTKEYS_ACTIVE.store(true, Ordering::Relaxed);
                 HOTKEYS_REGISTERED.store(true, Ordering::Relaxed);
-                return Ok(());
+                return;
             }
             Err(e) => {
-                println!(
-                    "⚠️ Win32ホットキー初期化失敗: {} - システムトレイフォールバック",
-                    e
-                );
+                println!("⚠️ Win32ホットキー初期化失敗: {e} - システムトレイフォールバック");
             }
         }
     }
@@ -418,6 +411,7 @@ fn setup_global_shortcuts(
     }
 
     let mut success_count = 0;
+    #[allow(clippy::collection_is_never_read)]
     let mut error_messages = Vec::new();
 
     // Ctrl+Shift+S: クイック保存
@@ -430,21 +424,21 @@ fn setup_global_shortcuts(
         let state = app_handle.state::<AppState>();
         match save_active_page(state) {
             Ok(result) => {
-                println!("✅ クイック保存完了: {}", result);
+                println!("✅ クイック保存完了: {result}");
                 REFRESH_NEEDED.store(true, Ordering::Relaxed);
             }
             Err(e) => {
-                eprintln!("❌ クイック保存エラー: {}", e);
+                eprintln!("❌ クイック保存エラー: {e}");
             }
         }
     }) {
-        Ok(_) => {
+        Ok(()) => {
             success_count += 1;
             println!("✅ Ctrl+Shift+S セットアップ成功");
         }
         Err(e) => {
-            error_messages.push(format!("Ctrl+Shift+S: {}", e));
-            println!("⚠️ Ctrl+Shift+S セットアップ失敗: {}", e);
+            error_messages.push(format!("Ctrl+Shift+S: {e}"));
+            println!("⚠️ Ctrl+Shift+S セットアップ失敗: {e}");
         }
     }
 
@@ -467,33 +461,27 @@ fn setup_global_shortcuts(
                     let _ = window.set_focus();
                 }
                 Err(e) => {
-                    eprintln!("ウィンドウ状態取得エラー: {}", e);
+                    eprintln!("ウィンドウ状態取得エラー: {e}");
                 }
             }
         }
     }) {
-        Ok(_) => {
+        Ok(()) => {
             success_count += 1;
             println!("✅ Ctrl+Shift+A セットアップ成功");
         }
         Err(e) => {
-            error_messages.push(format!("Ctrl+Shift+A: {}", e));
-            println!("⚠️ Ctrl+Shift+A セットアップ失敗: {}", e);
+            error_messages.push(format!("Ctrl+Shift+A: {e}"));
+            println!("⚠️ Ctrl+Shift+A セットアップ失敗: {e}");
         }
     }
 
     // 結果の評価（フォールバック戦略の場合）
     if success_count == 2 {
-        println!(
-            "🎉 全てのグローバルショートカット設定完了 ({}/2)",
-            success_count
-        );
+        println!("🎉 全てのグローバルショートカット設定完了 ({success_count}/2)");
         HOTKEYS_REGISTERED.store(true, Ordering::Relaxed);
     } else if success_count > 0 {
-        println!(
-            "⚠️ 一部のグローバルショートカット設定完了 ({}/2)",
-            success_count
-        );
+        println!("⚠️ 一部のグローバルショートカット設定完了 ({success_count}/2)");
         println!("   📝 設定できなかったホットキーは、システムトレイから操作してください");
         HOTKEYS_REGISTERED.store(true, Ordering::Relaxed);
     } else {
@@ -504,8 +492,6 @@ fn setup_global_shortcuts(
     }
 
     println!("   📝 ホットキーが使用できない場合は、システムトレイから操作してください");
-
-    Ok(())
 }
 
 // フォールバックホットキー登録（再起動時用）
@@ -518,25 +504,20 @@ fn register_hotkey<F>(
 where
     F: Fn(&AppHandle<tauri::Wry>) + Send + Sync + 'static + Clone,
 {
-    // Tauriホットキーシステヤバイパスしている場合
+    // Tauriホットキーシステムバイパスしている場合
     if BYPASS_TAURI_HOTKEYS.load(Ordering::Relaxed) {
-        println!(
-            "⚠️ {} Tauriホットキーシステムバイパス中 - スキップ",
-            display_name
-        );
-        return Err("ホットキーシステヤバイパス中".into());
+        println!("⚠️ {display_name} Tauriホットキーシステムバイパス中 - スキップ");
+        return Err("ホットキーシステムバイパス中".into());
     }
 
     // 通常の登録処理は実行しない（再起動時はエラーとなるため）
-    eprintln!(
-        "❌ {} フォールバック登録は再起動時に失敗します",
-        display_name
-    );
+    eprintln!("❌ {display_name} フォールバック登録は再起動時に失敗します");
     Err("再起動時のTauriホットキー登録は失敗します".into())
 }
 
 // デバウンス機能付きヘルパー関数
 fn should_execute_hotkey(last_timestamp: &AtomicU64) -> bool {
+    #[allow(clippy::cast_possible_truncation)]
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -598,10 +579,10 @@ fn create_system_tray(
         .menu(&menu)
         .icon(app_handle.default_window_icon().unwrap().clone())
         .on_menu_event(move |_app, event| {
-            handle_system_tray_menu_event(&app_handle_clone, event);
+            handle_system_tray_menu_event(&app_handle_clone, &event);
         })
         .on_tray_icon_event(move |tray, event| {
-            handle_system_tray_click_event(tray, event);
+            handle_system_tray_click_event(tray, &event);
         })
         .build(app_handle)?;
 
@@ -609,7 +590,7 @@ fn create_system_tray(
 }
 
 // システムトレイメニューイベントの処理
-fn handle_system_tray_menu_event(app: &AppHandle<tauri::Wry>, event: tauri::menu::MenuEvent) {
+fn handle_system_tray_menu_event(app: &AppHandle<tauri::Wry>, event: &tauri::menu::MenuEvent) {
     match event.id().as_ref() {
         "show" => {
             if let Some(window) = app.get_webview_window("main") {
@@ -634,8 +615,8 @@ fn handle_system_tray_menu_event(app: &AppHandle<tauri::Wry>, event: tauri::menu
             // アクティブページ保存をバックグラウンドで実行
             let app_state = app.state::<AppState>();
             match save_active_page(app_state) {
-                Ok(result) => println!("トレイからページを保存しました: {}", result),
-                Err(e) => eprintln!("トレイからの保存エラー: {}", e),
+                Ok(result) => println!("トレイからページを保存しました: {result}"),
+                Err(e) => eprintln!("トレイからの保存エラー: {e}"),
             }
         }
         "quit" => {
@@ -648,7 +629,7 @@ fn handle_system_tray_menu_event(app: &AppHandle<tauri::Wry>, event: tauri::menu
 }
 
 // システムトレイクリックイベントの処理
-fn handle_system_tray_click_event(tray: &tauri::tray::TrayIcon<tauri::Wry>, event: TrayIconEvent) {
+fn handle_system_tray_click_event(tray: &tauri::tray::TrayIcon<tauri::Wry>, event: &TrayIconEvent) {
     if let TrayIconEvent::Click {
         button: MouseButton::Left,
         button_state: MouseButtonState::Up,
@@ -684,17 +665,19 @@ fn handle_system_tray_click_event(tray: &tauri::tray::TrayIcon<tauri::Wry>, even
 
 // リフレッシュが必要かチェックするコマンド
 #[tauri::command]
-fn check_refresh_needed() -> Result<bool, String> {
+fn check_refresh_needed() -> bool {
     // 更新時に発火
     let needed = REFRESH_NEEDED.load(Ordering::Relaxed);
     if needed {
         REFRESH_NEEDED.store(false, Ordering::Relaxed);
         println!("✅ リフレッシュフラグをクリアしました");
     }
-    Ok(needed)
+    needed
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::significant_drop_tightening)]
 fn get_articles(
     state: State<AppState>,
     filters: Option<SearchFilters>,
@@ -725,11 +708,11 @@ fn get_articles(
         // フィルター処理：サイト
         if let Some(site) = filters.site {
             conditions.push("s.name LIKE ?".to_string());
-            params.push(format!("%{}%", site));
+            params.push(format!("%{site}%"));
         }
         // フィルター処理：タグ
         if let Some(tag_query) = filters.tag_query {
-            let search_tags: Vec<&str> = tag_query.split(',').map(|t| t.trim()).collect();
+            let search_tags: Vec<&str> = tag_query.split(',').map(str::trim).collect();
             for tag in search_tags {
                 conditions.push("t.name = ? COLLATE NOCASE".to_string());
                 params.push(tag.to_string());
@@ -752,14 +735,12 @@ fn get_articles(
     let articles = stmt
         .query_map(&param_refs[..], |row| {
             let tags_str: Option<String> = row.get(4)?;
-            let tags = if let Some(tags_str) = tags_str {
+            let tags = tags_str.map_or_else(Vec::new, |tags_str| {
                 tags_str
                     .split(',')
                     .map(|tag| tag.trim().to_string())
                     .collect()
-            } else {
-                Vec::new()
-            };
+            });
             Ok(ArticleWithDetails {
                 id: row.get(0)?,
                 url: row.get(1)?,
@@ -781,6 +762,8 @@ fn get_articles(
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::option_if_let_else)]
 fn save_article(state: State<AppState>, request: SaveArticleRequest) -> Result<String, String> {
     println!("記事保存開始: {}", request.url);
 
@@ -836,25 +819,22 @@ fn save_article(state: State<AppState>, request: SaveArticleRequest) -> Result<S
 
     // ph.3 タグの処理
     if let Some(tags_str) = request.tags {
-        let tag_names: Vec<&str> = tags_str.split(',').map(|tag| tag.trim()).collect();
+        let tag_names: Vec<&str> = tags_str.split(',').map(str::trim).collect();
         for tag_name in tag_names {
-            println!("処理中のタグ: '{}'", tag_name);
+            println!("処理中のタグ: '{tag_name}'");
             if !tag_name.is_empty() {
                 // 1. タグID取得/作成
                 let tag_id = get_or_create_tag(&db, tag_name)?;
 
                 // 2. 記事-タグ関連を作成
-                println!(
-                    "article_tags への INSERT: article_id={}, tag_id={}",
-                    article_id, tag_id
-                );
+                println!("article_tags への INSERT: article_id={article_id}, tag_id={tag_id}");
 
                 match db.execute(
                     "INSERT INTO article_tags (article_id, tag_id) VALUES (?, ?)",
                     params![article_id, tag_id],
                 ) {
-                    Ok(rows) => println!("article_tags INSERT 成功: {} rows", rows),
-                    Err(e) => println!("article_tags INSERT エラー: {}", e),
+                    Ok(rows) => println!("article_tags INSERT 成功: {rows} rows"),
+                    Err(e) => println!("article_tags INSERT エラー: {e}"),
                 }
             }
         }
@@ -862,11 +842,13 @@ fn save_article(state: State<AppState>, request: SaveArticleRequest) -> Result<S
         println!("タグなし（None）");
     }
 
-    println!("記事保存完了: {}", result_status);
+    println!("記事保存完了: {result_status}");
     Ok(result_status)
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::significant_drop_tightening)]
 fn update_article(state: State<AppState>, request: SaveArticleRequest) -> Result<(), String> {
     println!("記事編集開始: {}", request.url);
     let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -893,7 +875,7 @@ fn update_article(state: State<AppState>, request: SaveArticleRequest) -> Result
 
     // ph.4 タグ-記事リレーションを改めて登録
     if let Some(tags_str) = request.tags {
-        let tag_names: Vec<&str> = tags_str.split(',').map(|tag| tag.trim()).collect();
+        let tag_names: Vec<&str> = tags_str.split(',').map(str::trim).collect();
         for tag_name in tag_names {
             if !tag_name.is_empty() {
                 let tag_id = get_or_create_tag(&db, tag_name)?;
@@ -911,6 +893,8 @@ fn update_article(state: State<AppState>, request: SaveArticleRequest) -> Result
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::significant_drop_tightening)]
 fn delete_article(state: State<AppState>, url: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
@@ -921,6 +905,7 @@ fn delete_article(state: State<AppState>, url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 fn open_url(url: String) -> Result<(), String> {
     use std::process::Command;
 
@@ -952,6 +937,7 @@ fn open_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 fn save_active_page(state: State<AppState>) -> Result<String, String> {
     println!("自動保存開始...");
 
@@ -961,14 +947,14 @@ fn save_active_page(state: State<AppState>) -> Result<String, String> {
             info
         }
         Err(e) => {
-            println!("❌ browser-infoライブラリでの取得失敗: {}", e);
-            return Err(format!("ブラウザ情報取得失敗: {}", e));
+            println!("❌ browser-infoライブラリでの取得失敗: {e}");
+            return Err(format!("ブラウザ情報取得失敗: {e}"));
         }
     };
 
     // タグ自動生成
     let auto_tags = auto_tagging(browser_info.url.clone());
-    println!("生成されたタグ: {}", auto_tags);
+    println!("生成されたタグ: {auto_tags}");
 
     let request = SaveArticleRequest {
         url: browser_info.url,
@@ -989,6 +975,8 @@ fn save_active_page(state: State<AppState>) -> Result<String, String> {
 
 // 人気タグを取得
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::significant_drop_tightening)]
 fn get_popular_tags(state: State<AppState>, limit: Option<usize>) -> Result<Vec<TagCount>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let limit = limit.unwrap_or(20);
@@ -1066,7 +1054,7 @@ fn get_or_create_site(db: &Connection, site_name: &str) -> Result<i64, String> {
         .optional()
         .map_err(|e| e.to_string())?;
     if let Some(site_id) = site_id_opt {
-        println!("既存サイト使用: {} (ID: {})", site_name, site_id);
+        println!("既存サイト使用: {site_name} (ID: {site_id})");
         Ok(site_id)
     } else {
         // 新しいサイトを作成（INSERT）
@@ -1075,7 +1063,7 @@ fn get_or_create_site(db: &Connection, site_name: &str) -> Result<i64, String> {
 
         // 作成したサイトのIDを取得
         let site_id = db.last_insert_rowid();
-        println!("新規サイト作成: {} (ID: {})", site_name, site_id);
+        println!("新規サイト作成: {site_name} (ID: {site_id})");
         Ok(site_id)
     }
 }
@@ -1092,7 +1080,7 @@ fn get_or_create_tag(db: &Connection, tag_name: &str) -> Result<i64, String> {
         .map_err(|e| e.to_string())?;
 
     if let Some(tag_id) = tag_id_opt {
-        println!("既存タグ使用: {} (ID: {})", tag_name, tag_id);
+        println!("既存タグ使用: {tag_name} (ID: {tag_id})");
         Ok(tag_id)
     } else {
         // 新しいタグを作成
@@ -1100,7 +1088,7 @@ fn get_or_create_tag(db: &Connection, tag_name: &str) -> Result<i64, String> {
             .map_err(|e| e.to_string())?;
 
         let tag_id = db.last_insert_rowid();
-        println!("新規タグ作成: {} (ID: {})", tag_name, tag_id);
+        println!("新規タグ作成: {tag_name} (ID: {tag_id})");
         Ok(tag_id)
     }
 }
@@ -1125,8 +1113,40 @@ fn url_preserve_targets(host: &str) -> bool {
     url_preserve_sites.iter().any(|&site| host.contains(site))
 }
 
-fn init_database() -> Result<Connection> {
-    let conn = Connection::open("atode.db")?;
+fn load_config() -> Config {
+    let config_path = PathBuf::from("config.json");
+
+    if config_path.exists() {
+        match fs::read_to_string(&config_path) {
+            Ok(content) => match serde_json::from_str::<Config>(&content) {
+                Ok(config) => {
+                    println!(
+                        "✅ 設定ファイル読み込み成功: database_path = {}",
+                        config.database_path
+                    );
+                    return config;
+                }
+                Err(e) => {
+                    eprintln!("⚠️ 設定ファイルのパースエラー: {e} - デフォルト設定を使用");
+                }
+            },
+            Err(e) => {
+                eprintln!("⚠️ 設定ファイル読み込みエラー: {e} - デフォルト設定を使用");
+            }
+        }
+    } else {
+        println!("ℹ️ 設定ファイルが見つかりません - デフォルト設定を使用");
+    }
+
+    // デフォルト設定
+    Config {
+        database_path: "atode.db".to_string(),
+    }
+}
+
+fn init_database(db_path: &str) -> Result<Connection> {
+    println!("📂 データベースパス: {db_path}");
+    let conn = Connection::open(db_path)?;
 
     conn.execute("PRAGMA foreign_keys = ON;", [])?;
 
@@ -1137,7 +1157,7 @@ fn init_database() -> Result<Connection> {
         include_str!("ddl/004_create_article_tags.sql"),
     ];
 
-    for ddl in ddl_files.iter() {
+    for ddl in &ddl_files {
         conn.execute(ddl, [])?;
     }
 
@@ -1145,6 +1165,7 @@ fn init_database() -> Result<Connection> {
 }
 
 // 自動タグ付け
+#[allow(clippy::needless_pass_by_value)]
 fn auto_tagging(url: String) -> String {
     let mut tags: Vec<String> = Vec::with_capacity(3);
 
