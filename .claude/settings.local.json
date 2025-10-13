@@ -5,7 +5,9 @@
       "Bash(1)",
       "Bash(cargo clean:*)",
       "Bash(cargo:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\n設定ファイル方式のDB指定機能追加とclippy警告完全解消\n\n- SQLiteパスをconfig.jsonで任意指定可能に\n- Cargo.tomlメタデータ追加（license, repository, keywords等）\n- clippy pedantic/nursery警告をすべて解消\n- once_cell依存を削除しstd::sync::LazyLockへ移行\n- コードフォーマット統一（cargo fmt）\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

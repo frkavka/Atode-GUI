@@ -11,10 +11,36 @@ class AtodeApp {
     }
 
     async init() {
+        this.loadTheme();
         await this.loadArticles();
         await this.loadPopularTags();
         this.setupEventListeners();
         this.setupPeriodicRefresh();
+    }
+
+    loadTheme() {
+        const savedTheme = localStorage.getItem('theme');
+        const isDark = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+        if (isDark) {
+            document.body.classList.add('dark-mode');
+            this.updateThemeIcon(true);
+        } else {
+            this.updateThemeIcon(false);
+        }
+    }
+
+    toggleTheme() {
+        const isDark = document.body.classList.toggle('dark-mode');
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        this.updateThemeIcon(isDark);
+    }
+
+    updateThemeIcon(isDark) {
+        const icon = document.getElementById('themeIcon');
+        if (icon) {
+            icon.textContent = isDark ? '☀️' : '🌙';
+        }
     }
 
     setupEventListeners() {
