@@ -7,6 +7,7 @@ class AtodeApp {
         this.editingUrl = null;
         this.popularTags = [];
         this.popularSites = [];
+        this._confirmResolve = null;
         this.init();
     }
 
@@ -68,12 +69,49 @@ class AtodeApp {
             });
         }
 
+        // 確認モーダルのボタン・外側クリック
+        const confirmModal = document.getElementById('confirmModal');
+        document.getElementById('confirmOkBtn')?.addEventListener('click', () => this.resolveConfirm(true));
+        document.getElementById('confirmCancelBtn')?.addEventListener('click', () => this.resolveConfirm(false));
+        if (confirmModal) {
+            confirmModal.addEventListener('click', (e) => {
+                if (e.target === confirmModal) {
+                    this.resolveConfirm(false);
+                }
+            });
+        }
+
         // Escape キーでモーダルを閉じる
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
+                this.resolveConfirm(false);
                 this.closeModal();
             }
         });
+    }
+
+    // ネイティブconfirm()はTauriのmacOS向けWebViewで未実装のため、
+    // 自前モーダルで代替する
+    confirmDialog(message) {
+        const modal = document.getElementById('confirmModal');
+        const messageEl = document.getElementById('confirmMessage');
+        if (!modal || !messageEl) return Promise.resolve(false);
+
+        messageEl.textContent = message;
+        modal.style.display = 'block';
+
+        return new Promise((resolve) => {
+            this._confirmResolve = resolve;
+        });
+    }
+
+    resolveConfirm(result) {
+        const modal = document.getElementById('confirmModal');
+        if (modal) modal.style.display = 'none';
+        if (this._confirmResolve) {
+            this._confirmResolve(result);
+            this._confirmResolve = null;
+        }
     }
 
     setupPeriodicRefresh() {
@@ -255,7 +293,7 @@ class AtodeApp {
     }
 
     async deleteArticle(url) {
-        if (!confirm('この記事を削除しますか？')) return;
+        if (!(await this.confirmDialog('この記事を削除しますか？'))) return;
 
         try {
             await invoke('delete_article', { url });

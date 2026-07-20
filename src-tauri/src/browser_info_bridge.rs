@@ -91,9 +91,6 @@ fn fallback_get_browser_info() -> Result<BrowserInfo, String> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        Ok(BrowserInfo {
-            url: "https://example.com/unsupported-platform".to_string(),
-            title: "プラットフォーム未対応（フォールバック）".to_string(),
-        })
+        Err("browser-infoライブラリでのブラウザ情報取得に失敗し、このOS向けのフォールバックは未実装です".to_string())
     }
 }

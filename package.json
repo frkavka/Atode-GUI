@@ -7,6 +7,10 @@
     "prepare:windows": "cmd /c \"if not exist dist mkdir dist\" && cmd /c \"copy src-web\\main.js dist\\bundle.js >NUL\" && cmd /c \"copy src-web\\index.html dist\\index.html >NUL\" && cmd /c \"copy src-web\\styles.css dist\\styles.css >NUL\"",
     "dev:windows": "npm run prepare:windows && tauri dev",
     "build:windows": "npm run prepare:windows && tauri build",
+    "prepare:mac": "mkdir -p dist && cp src-web/main.js dist/bundle.js && cp src-web/index.html dist/index.html && cp src-web/styles.css dist/styles.css",
+    "dev:mac": "npm run prepare:mac && tauri dev",
+    "build:mac": "npm run prepare:mac && tauri build",
+    "clean:mac": "rm -rf dist",
     "info": "tauri info",
     "clean:windows": "cmd /c \"if exist dist rmdir /s /q dist\""
   },

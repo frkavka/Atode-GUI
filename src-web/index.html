@@ -85,6 +85,16 @@
         </div>
     </div>
 
+    <div id="confirmModal" class="modal">
+        <div class="modal-content confirm-modal-content">
+            <p id="confirmMessage"></p>
+            <div class="form-actions">
+                <button type="button" id="confirmCancelBtn">❌ キャンセル</button>
+                <button type="button" id="confirmOkBtn" class="btn-danger">🗑️ 削除</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Tauri API の読み込み確認 -->
     <script>
         window.addEventListener('DOMContentLoaded', () => {
