@@ -19,7 +19,7 @@ use tauri::{
     // アプリケーション状態管理
     State,
 };
-use tauri_plugin_global_shortcut::GlobalShortcutExt;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 // Win32 APIホットキー実装用
 #[cfg(target_os = "windows")]
@@ -66,9 +66,6 @@ const MOD_CTRL_SHIFT: u32 = 0x0002 | 0x0004; // MOD_CONTROL | MOD_SHIFT
 const VK_S: u32 = 0x53;
 #[cfg(target_os = "windows")]
 const VK_A: u32 = 0x41;
-
-// Tauriホットキーシステムバイパスフラグ
-static BYPASS_TAURI_HOTKEYS: AtomicBool = AtomicBool::new(false);
 
 // デバウンス間隔（ミリ秒）
 const DEBOUNCE_MS: u64 = 500;
@@ -387,9 +384,9 @@ fn setup_application(app: &mut tauri::App<tauri::Wry>) -> Result<(), Box<dyn std
 }
 
 fn setup_global_shortcuts(app_handle: &AppHandle<tauri::Wry>) {
-    println!("⚙️ Win32ネイティブホットキーシステム初期化開始...");
+    println!("⚙️ グローバルショートカット初期化開始...");
 
-    // Win32ネイティブホットキーで置き換え
+    // Windowsは生のWin32 APIを優先（Tauriプラグインより挙動が安定するため）
     #[cfg(target_os = "windows")]
     {
         match setup_win32_hotkeys(app_handle.clone()) {
@@ -400,14 +397,14 @@ fn setup_global_shortcuts(app_handle: &AppHandle<tauri::Wry>) {
                 return;
             }
             Err(e) => {
-                println!("⚠️ Win32ホットキー初期化失敗: {e} - システムトレイフォールバック");
+                println!("⚠️ Win32ホットキー初期化失敗: {e} - Tauriグローバルショートカットにフォールバック");
             }
         }
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        println!("ℹ️ Windows以外のプラットフォーム: システムトレイのみ有効");
+        println!("ℹ️ Windows以外のプラットフォーム: Tauriグローバルショートカットで登録");
     }
 
     let mut success_count = 0;
@@ -494,25 +491,26 @@ fn setup_global_shortcuts(app_handle: &AppHandle<tauri::Wry>) {
     println!("   📝 ホットキーが使用できない場合は、システムトレイから操作してください");
 }
 
-// フォールバックホットキー登録（再起動時用）
+// Tauriプラグイン経由でのグローバルショートカット登録（Windows以外のメイン経路、Windowsのフォールバック経路）
 fn register_hotkey<F>(
-    _app_handle: &AppHandle<tauri::Wry>,
-    _shortcut_str: &str,
+    app_handle: &AppHandle<tauri::Wry>,
+    shortcut_str: &str,
     display_name: &str,
-    _callback: F,
+    callback: F,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     F: Fn(&AppHandle<tauri::Wry>) + Send + Sync + 'static + Clone,
 {
-    // Tauriホットキーシステムバイパスしている場合
-    if BYPASS_TAURI_HOTKEYS.load(Ordering::Relaxed) {
-        println!("⚠️ {display_name} Tauriホットキーシステムバイパス中 - スキップ");
-        return Err("ホットキーシステムバイパス中".into());
-    }
-
-    // 通常の登録処理は実行しない（再起動時はエラーとなるため）
-    eprintln!("❌ {display_name} フォールバック登録は再起動時に失敗します");
-    Err("再起動時のTauriホットキー登録は失敗します".into())
+    println!("🔧 {display_name} をTauriグローバルショートカットとして登録中 ({shortcut_str})...");
+    app_handle
+        .global_shortcut()
+        .on_shortcut(shortcut_str, move |app_handle, _shortcut, event| {
+            // キー押下・離上の両方でイベントが飛んでくるため、押下時のみ実行する
+            if event.state == ShortcutState::Pressed {
+                callback(app_handle);
+            }
+        })
+        .map_err(|e| e.to_string().into())
 }
 
 // デバウンス機能付きヘルパー関数

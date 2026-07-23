@@ -1,5 +1,7 @@
 src-tauri/target/
 src-tauri/Cargo.lock
+# Tauriのビルド時に自動生成されるcapabilities/ACLスキーマ（ビルドのたびに差分が湧く）
+src-tauri/gen/schemas/
 node_modules/
 dist/
 *.db
