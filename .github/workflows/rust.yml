@@ -12,78 +12,108 @@ env:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            build_cmd: npm run build:windows
+            artifact_name: atode-windows-x64
+            artifact_path: src-tauri/target/release/bundle/msi/*.msi
+          - os: macos-latest
+            build_cmd: npm run build:mac
+            artifact_name: atode-macos-arm64
+            artifact_path: src-tauri/target/release/bundle/dmg/*.dmg
+
+    runs-on: ${{ matrix.os }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        
+
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
-      
-    - name: Clean npm cache and install
+
+    - name: Clean npm cache and install (Windows)
+      if: runner.os == 'Windows'
       run: |
         npm cache clean --force
         Remove-Item package-lock.json -ErrorAction SilentlyContinue
         npm install
-      
+
+    - name: Clean npm cache and install (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        npm cache clean --force
+        rm -f package-lock.json
+        npm install
+
     - name: Build Tauri app
-      run: npm run build:windows
-      
-    - name: Upload Windows artifacts (開発用)
+      run: ${{ matrix.build_cmd }}
+
+    - name: Upload artifacts (開発用)
       if: github.ref_type != 'tag'
       uses: actions/upload-artifact@v4
       with:
-        name: atode-windows-x64
-        path: src-tauri/target/release/bundle/msi/*.msi
-        
-    # タグがpushされた時のみリリース作成
-    - name: Create Release
+        name: ${{ matrix.artifact_name }}
+        path: ${{ matrix.artifact_path }}
+
+    - name: Upload release asset
       if: github.ref_type == 'tag'
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-${{ matrix.artifact_name }}
+        path: ${{ matrix.artifact_path }}
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download all release assets
+      uses: actions/download-artifact@v4
+      with:
+        pattern: release-*
+        path: dist-artifacts
+        merge-multiple: true
+
+    - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: src-tauri/target/release/bundle/msi/*.msi
+        files: dist-artifacts/**/*
         generate_release_notes: true
         draft: false
         prerelease: false
         body: |
-          ## Atode ${{ github.ref_name }} - Windows Release
-          
+          ## Atode ${{ github.ref_name }}
+
           ### Download
           - **Windows**: Download the `.msi` file below
-          
+          - **macOS (Apple Silicon)**: Download the `.dmg` file below
+
           ### Features
-          - ✅ **Full feature support** including hotkeys (`Ctrl+Shift+S`)
-          - ✅ **System tray integration** (`Ctrl+Shift+A`)
+          - ✅ **Full feature support** including hotkeys (`Ctrl+Shift+S` / `Ctrl+Shift+A`) — now on both Windows and macOS
+          - ✅ **System tray integration**
           - ✅ **Local SQLite storage** - your data stays private
           - ✅ **Tag-based organization** - organize with custom tags
           - ✅ **Site-based filtering** - find articles by site
-          - ✅ **Cross-browser support** - works with Chrome, Edge, Firefox, etc.
-          
-          ### What's New in v1.0
-          - First stable release
-          - Core functionality complete and tested
-          - Windows native performance with Rust + Tauri
-          - Lightweight (~20MB RAM usage)
-          
+          - ✅ **Cross-browser support** - works with Chrome, Edge, Firefox, Safari, Vivaldi, Opera
+
           ### System Requirements
           - Windows 10 or later
-          - .NET Framework 4.5+ (usually pre-installed)
-          
-          ### Coming Soon
-          - macOS support
-          - Linux support
-          - Multi-language UI
-          
-          ### Support
-          For issues or feature requests, please visit the [Issues page](https://github.com/frkavka/Atode-GUI/issues).
-          
+          - macOS 11 or later (Apple Silicon)
+
+          ### Note
+          - Neither build is code-signed. Windows may show a SmartScreen warning, and macOS will show a Gatekeeper warning ("developer cannot be verified") on first launch — right-click the app and choose "Open" to bypass it.
+          - The macOS build targets Apple Silicon (arm64) only; it will not run on Intel Macs.
+
           ---
-          **Note**: This release focuses on Windows to ensure the best user experience. Cross-platform support will be added in future releases.
+          For issues or feature requests, please visit the [Issues page](https://github.com/frkavka/Atode-GUI/issues).
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
